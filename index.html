@@ -315,6 +315,10 @@ tr:hover td{background:#fafaf8}
       <option value="USD">USD only</option>
       <option value="LRD">LRD only</option>
     </select>
+    <select id="fil-status" onchange="renderLedger()" style="flex:1;min-width:100px;font-size:13px;padding:8px 10px">
+      <option value="ACTIVE">Active only</option>
+      <option value="">All (incl. deleted)</option>
+    </select>
   </div>
   <div class="card" style="padding:0;overflow:hidden">
     <div class="tbl-wrap">
@@ -506,22 +510,56 @@ tr:hover td{background:#fafaf8}
       <div class="step-n">STEP 2 — Add the sync script (supports backup AND restore)</div>
       <div class="step-t">In your sheet: <strong>Extensions → Apps Script</strong>. Delete existing code, paste the script below, click <strong>Save</strong>, then <strong>Deploy → New Deployment → Web App</strong>. Set <em>Execute as: Me</em> and <em>Who has access: Anyone</em>. Click Deploy, authorize when prompted, and copy the Web App URL.</div>
       <div class="step-code">function doPost(e){
-  var ss=SpreadsheetApp.openById(e.parameter.sheetId);
-  var d=JSON.parse(e.parameter.data);
-  var sh=ss.getSheetByName(d.tab)||ss.insertSheet(d.tab);
-  if(d.clear)sh.clearContents();
-  if(d.headers&&sh.getLastRow()===0)sh.appendRow(d.headers);
-  if(d.rows)d.rows.forEach(function(r){sh.appendRow(r);});
-  return ContentService.createTextOutput("OK");
+  try{
+    var body=e.postData.contents;
+    var d=JSON.parse(body);
+    var ss=SpreadsheetApp.openById(d.sheetId);
+    var sh=ss.getSheetByName(d.tab)||ss.insertSheet(d.tab);
+    // Soft delete: set Status = DELETED for matching row ID
+    if(d.updateStatus){
+      var id=String(d.updateStatus.id);
+      var rows=sh.getDataRange().getValues();
+      for(var i=1;i&lt;rows.length;i++){
+        if(String(rows[i][0])===id){
+          var col=rows[0].indexOf('Status')+1;
+          if(col&gt;0) sh.getRange(i+1,col).setValue(d.updateStatus.status);
+          break;
+        }
+      }
+      return ContentService.createTextOutput('{"status":"OK"}').setMimeType(ContentService.MimeType.JSON);
+    }
+    // Edit: update existing row in place by ID
+    if(d.updateRow){
+      var id=String(d.updateRow.id);
+      var rows=sh.getDataRange().getValues();
+      for(var i=1;i&lt;rows.length;i++){
+        if(String(rows[i][0])===id){
+          sh.getRange(i+1,1,1,d.updateRow.row.length).setValues([d.updateRow.row]);
+          break;
+        }
+      }
+      return ContentService.createTextOutput('{"status":"OK"}').setMimeType(ContentService.MimeType.JSON);
+    }
+    if(d.clear)sh.clearContents();
+    if(d.headers&amp;&amp;sh.getLastRow()===0)sh.appendRow(d.headers);
+    if(d.rows)d.rows.forEach(function(r){sh.appendRow(r);});
+    return ContentService.createTextOutput('{"status":"OK"}').setMimeType(ContentService.MimeType.JSON);
+  }catch(err){
+    return ContentService.createTextOutput('{"status":"ERROR","message":"'+err.toString()+'"}').setMimeType(ContentService.MimeType.JSON);
+  }
 }
 
 function doGet(e){
-  var ss=SpreadsheetApp.openById(e.parameter.sheetId);
-  var tab=e.parameter.tab||'Master Log';
-  var sh=ss.getSheetByName(tab);
-  if(!sh)return ContentService.createTextOutput(JSON.stringify({rows:[]})).setMimeType(ContentService.MimeType.JSON);
-  var data=sh.getDataRange().getValues();
-  return ContentService.createTextOutput(JSON.stringify({rows:data})).setMimeType(ContentService.MimeType.JSON);
+  try{
+    var ss=SpreadsheetApp.openById(e.parameter.sheetId);
+    var tab=e.parameter.tab||'Master Log';
+    var sh=ss.getSheetByName(tab);
+    if(!sh)return ContentService.createTextOutput('{"rows":[]}').setMimeType(ContentService.MimeType.JSON);
+    var data=sh.getDataRange().getValues();
+    return ContentService.createTextOutput(JSON.stringify({rows:data})).setMimeType(ContentService.MimeType.JSON);
+  }catch(err){
+    return ContentService.createTextOutput('{"rows":[],"error":"'+err.toString()+'"}').setMimeType(ContentService.MimeType.JSON);
+  }
 }</div>
     </div>
     <div class="step" style="border-left-color:var(--amber)">
@@ -557,6 +595,10 @@ function invalidateRecon(date){
     return r;
   });
   save();
+}
+// Returns only ACTIVE transactions — used by ALL calculations, reports, reconciliation
+function activeTXN(txns){
+  return (txns||TXN).filter(t=>(t.status||'ACTIVE')==='ACTIVE');
 }
 function methodClass(m){if(!m||m==='Cash')return 'cash';if(m.toLowerCase().includes('mobile'))return 'mobile';return 'bank';}
 function methodShort(m){if(!m||m==='Cash')return 'Cash';if(m.toLowerCase().includes('mobile'))return m.includes('Orange')?'MM-Orange':'MM-MTN';return 'Bank';}
@@ -594,6 +636,7 @@ function toUSD(t){
 
 // Separate cash balances by currency (excludes Currency Exchange — handled separately)
 function calcBalances(txns){
+  txns=activeTXN(txns);
   const real=txns.filter(t=>t.type!=='Currency Exchange');
   // USD balance
   const usdInc=real.filter(t=>t.type==='Income'&&(t.cur==='USD'||!t.cur)).reduce((a,t)=>a+t.amt,0);
@@ -617,6 +660,7 @@ function calcBalances(txns){
 
 function calcProfit(txns){
   // Excludes Currency Exchange from P&L — it's a balance sheet movement
+  txns=activeTXN(txns);
   const real=txns.filter(t=>t.type!=='Currency Exchange');
   const inc  =real.filter(t=>t.type==='Income').reduce((a,t)=>a+toUSD(t),0);
   const cog  =real.filter(t=>t.cat==='Cost of Goods').reduce((a,t)=>a+toUSD(t),0);
@@ -632,7 +676,7 @@ function calcProfit(txns){
 
 function periodFilter(period,biz){
   const now=new Date();
-  return TXN.filter(t=>{
+  return activeTXN(TXN).filter(t=>{
     const td=new Date(t.date+'T00:00:00');
     let ok=true;
     if(period==='week'){const w=new Date(now);w.setDate(w.getDate()-6);ok=td>=w;}
@@ -735,6 +779,7 @@ function saveEntry(){
       capturePreChange();
       TXN[idx]=Object.assign({},TXN[idx],txn);
       msg.className='cfm cfm-ok';msg.textContent='✓ Updated — '+cur+' '+amt.toFixed(2)+' '+type+(fx?' @ '+fx.toFixed(2)+' LRD/$':'');
+      gsUpdateRow(TXN[idx]); // update existing sheet row, not add new one
     }
     invalidateRecon(txn.date);
     showChangeImpact();
@@ -809,9 +854,27 @@ function deleteTxn(id){
   }
   const _delDate=t.date;
   capturePreChange();
-  TXN=TXN.filter(x=>x.id!==id);
+  // SOFT DELETE: mark as DELETED locally, keep row in array
+  const idx=TXN.findIndex(x=>x.id===id);
+  if(idx>-1) TXN[idx]=Object.assign({},TXN[idx],{status:'DELETED'});
+  gsMarkDeleted(id); // update Google Sheet row status
   invalidateRecon(_delDate);
   save();renderLedger();renderDash();showChangeImpact();
+}
+// Mark a row DELETED in Google Sheet by ID (updates Status column only)
+async function gsMarkDeleted(id){
+  if(!GS.on||!GS.url)return;
+  try{await gsPost({tab:'Master Log',updateStatus:{id,status:'DELETED'}});}catch(e){}
+}
+// Update an existing row in Google Sheet by ID
+async function gsUpdateRow(t){
+  if(!GS.on||!GS.url)return;
+  try{
+    const row=[t.id,t.date,t.biz,t.type,t.cat,t.cur||'USD',t.amt,t.fx||'',
+      t.cur==='LRD'&&t.fx?(t.amt/t.fx).toFixed(2):t.cur!=='LRD'?t.amt.toFixed(2):'',
+      t.method||'Cash',t.by||'Owner',t.notes||'','ACTIVE'];
+    await gsPost({tab:'Master Log',updateRow:{id:t.id,row}});
+  }catch(e){}
 }
 function updateFxHint(){
   const el=document.getElementById('f-fx-hint');
@@ -926,7 +989,7 @@ function renderDash(){
     return `<div class="bar-row"><div class="bar-lbl">${b}</div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${v>=0?cols[b]:'var(--red-mid)'}"></div></div><div class="bar-val" style="color:${v>=0?'var(--green)':'var(--red-mid)'}">${v>=0?'':'-'}${fmtU(Math.abs(v))}</div></div>`;
   }).join('');
 
-  const todayT=TXN.filter(t=>t.date===todayISO());
+  const todayT=activeTXN(TXN).filter(t=>t.date===todayISO());
   const todayInc=todayT.filter(t=>t.type==='Income').reduce((a,t)=>a+toUSD(t),0);
   const todayExp=todayT.filter(t=>t.type==='Expense').reduce((a,t)=>a+toUSD(t),0);
   document.getElementById('kpi-grid').innerHTML=`
@@ -964,10 +1027,10 @@ function renderDash(){
 
   // Expense spike — today vs last 3 active days only
   const todayISO2=todayISO();
-  const todayExp2=TXN.filter(t=>t.date===todayISO2&&t.type==='Expense').reduce((a,t)=>a+toUSD(t),0);
+  const todayExp2=activeTXN(TXN).filter(t=>t.date===todayISO2&&t.type==='Expense').reduce((a,t)=>a+toUSD(t),0);
   const last3Days=[];
   for(let i=1;i<=3;i++){const d=new Date();d.setDate(d.getDate()-i);last3Days.push(d.toISOString().split('T')[0]);}
-  const last3Exp=last3Days.map(d=>TXN.filter(t=>t.date===d&&t.type==='Expense').reduce((a,t)=>a+toUSD(t),0));
+  const last3Exp=last3Days.map(d=>activeTXN(TXN).filter(t=>t.date===d&&t.type==='Expense').reduce((a,t)=>a+toUSD(t),0));
   const activeDays3=last3Exp.filter(v=>v>0);
   if(activeDays3.length>=2&&todayExp2>0){
     const avg3=activeDays3.reduce((a,v)=>a+v,0)/activeDays3.length;
@@ -978,13 +1041,13 @@ function renderDash(){
   // Missing entry — ONLY if yesterday had transactions AND today has none (not more)
   const yISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toISOString().split('T')[0];})();
   const twoDISO=(()=>{const d=new Date();d.setDate(d.getDate()-2);return d.toISOString().split('T')[0];})();
-  const todayTxns=TXN.filter(t=>t.date===todayISO2);
-  const yTxns=TXN.filter(t=>t.date===yISO);
+  const todayTxns=activeTXN(TXN).filter(t=>t.date===todayISO2);
+  const yTxns=activeTXN(TXN).filter(t=>t.date===yISO);
   if(yTxns.length>0&&todayTxns.length===0&&!isDayClosed(todayISO2)){
     alerts.push({c:'a-warn',m:'No entries today yet. Yesterday had '+yTxns.length+' transaction(s). <button onclick="markNoBusinessDay(\x27'+todayISO2+'\x27)" style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--amber-dk);background:var(--amber-lt);color:var(--amber-dk);cursor:pointer">Mark as No Business Day</button>'});
   }
   // Also check 2 days ago if yesterday was also empty (catches 2-day gaps)
-  const twoDTxns=TXN.filter(t=>t.date===twoDISO);
+  const twoDTxns=activeTXN(TXN).filter(t=>t.date===twoDISO);
   if(twoDTxns.length>0&&yTxns.length===0&&!isDayClosed(yISO)){
     alerts.push({c:'a-warn',m:'No entries on '+dlabel(yISO)+'. <button onclick="markNoBusinessDay(\x27'+yISO+'\x27)" style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--amber-dk);background:var(--amber-lt);color:var(--amber-dk);cursor:pointer">Mark as No Business Day</button>'});
   }
@@ -1035,6 +1098,8 @@ function renderLedger(){
   }
   const filCur=document.getElementById('fil-cur').value;
   if(filCur)rows=rows.filter(t=>(t.cur||'USD')===filCur);
+  const filStatus=document.getElementById('fil-status').value;
+  if(filStatus==='ACTIVE')rows=rows.filter(t=>(t.status||'ACTIVE')==='ACTIVE');
   const empty=document.getElementById('ledger-empty');
   const body=document.getElementById('ledger-body');
   if(!rows.length){empty.style.display='block';body.innerHTML='';document.getElementById('ledger-count').textContent=0;document.getElementById('ledger-total').textContent='$0.00';return;}
@@ -1100,7 +1165,7 @@ let _reconData={};
 // Pure physical balance per currency — strictly no FX conversion
 function calcPhysicalBalances(date, biz){
   // Cash-only transactions for this date/biz
-  const txns=TXN.filter(t=>
+  const txns=activeTXN(TXN).filter(t=>
     t.date===date &&
     (biz==='All'||t.biz===biz) &&
     (!t.method||t.method==='Cash')
@@ -1134,7 +1199,7 @@ function calcPhysicalBalances(date, biz){
   });
 
   // Non-cash totals (for reference display only)
-  const allTxns=TXN.filter(t=>t.date===date&&(biz==='All'||t.biz===biz));
+  const allTxns=activeTXN(TXN).filter(t=>t.date===date&&(biz==='All'||t.biz===biz));
   const mmUSD=allTxns.filter(t=>t.method&&t.method.toLowerCase().includes('mobile')&&(t.cur||'USD')==='USD').reduce((a,t)=>a+t.amt,0);
   const mmLRD=allTxns.filter(t=>t.method&&t.method.toLowerCase().includes('mobile')&&t.cur==='LRD').reduce((a,t)=>a+t.amt,0);
   const bankUSD=allTxns.filter(t=>t.method&&t.method.toLowerCase().includes('bank')&&(t.cur||'USD')==='USD').reduce((a,t)=>a+t.amt,0);
@@ -1536,14 +1601,15 @@ async function syncAll(){
   if(!GS.on){msg.className='cfm cfm-err';msg.textContent='Not connected. Click Setup Guide.';return;}
   msg.className='cfm';msg.textContent='Syncing…';
   try{
-    const hdrs=['ID','Date','Business','Type','Category','Currency','Amount','FX Rate','USD Equivalent','Method','Handled By','Notes'];
-    const rows=TXN.map(t=>[t.id,t.date,t.biz,t.type,t.cat,t.cur||'USD',t.amt,t.fx||'',t.cur==='LRD'&&t.fx?(t.amt/t.fx).toFixed(2):t.cur!=='LRD'?t.amt.toFixed(2):'',t.method||'Cash',t.by||'Owner',t.notes||'']);
+    const hdrs=['ID','Date','Business','Type','Category','Currency','Amount','FX Rate','USD Equivalent','Method','Handled By','Notes','Status'];
+    const rows=TXN.map(t=>[t.id,t.date,t.biz,t.type,t.cat,t.cur||'USD',t.amt,t.fx||'',t.cur==='LRD'&&t.fx?(t.amt/t.fx).toFixed(2):t.cur!=='LRD'?t.amt.toFixed(2):'',t.method||'Cash',t.by||'Owner',t.notes||'',t.status||'ACTIVE']);
     await gsPost({tab:'Master Log',clear:true,headers:hdrs,rows});
     await gsPost({tab:'FX Rates',clear:true,headers:['Date','Rate LRD/USD','Source'],rows:FX.map(r=>[r.date,r.rate,r.src])});
     await gsPost({tab:'Closed Days',clear:true,headers:['Date','Status'],rows:CLOSED.map(d=>[d,'Closed'])});
     if(SNAP.length) await gsPost({tab:'Snapshots',clear:true,headers:['Timestamp','Label','Net Profit USD','USD Cash','LRD Cash','Txn Count'],rows:SNAP.map(s=>[s.ts,s.label,s.profit,s.usdCash,s.lrdCash,s.txnCount])});
     GS.lastSync=new Date().toISOString();save();
-    msg.className='cfm cfm-ok';msg.textContent='✓ Sync sent — '+TXN.length+' transactions. Check your Google Sheet now to confirm rows appeared.';
+    const activeCount=activeTXN(TXN).length;
+    msg.className='cfm cfm-ok';msg.textContent='✓ Sync sent — '+activeCount+' active + '+(TXN.length-activeCount)+' deleted transactions. Check your Google Sheet now to confirm rows appeared.';
   }catch(e){
     msg.className='cfm cfm-err';msg.textContent='Sync error: '+e.message;
   }
@@ -1551,7 +1617,12 @@ async function syncAll(){
 }
 async function syncRow(t){
   if(!GS.on||!GS.url)return;
-  try{await gsPost({tab:'Master Log',rows:[[t.id,t.date,t.biz,t.type,t.cat,t.amt,t.fx||curFX(),(t.amt*(t.fx||curFX())).toFixed(0),t.method||'Cash',t.by||'Owner',t.notes||'']]});}catch(e){}
+  try{
+    const row=[t.id,t.date,t.biz,t.type,t.cat,t.cur||'USD',t.amt,t.fx||'',
+      t.cur==='LRD'&&t.fx?(t.amt/t.fx).toFixed(2):t.cur!=='LRD'?t.amt.toFixed(2):'',
+      t.method||'Cash',t.by||'Owner',t.notes||'','ACTIVE'];
+    await gsPost({tab:'Master Log',rows:[row]});
+  }catch(e){}
 }
 
 async function loadFromSheets(){
@@ -1566,6 +1637,7 @@ async function loadFromSheets(){
     const txnRows=txnData.rows||[];
     // Row 0 is headers: ID,Date,Business,Type,Category,Amount USD,Method,Handled By,Notes
     if(txnRows.length>1){
+      // Headers: ID,Date,Biz,Type,Cat,Currency,Amt,FX,USDEquiv,Method,By,Notes,Status
       TXN=txnRows.slice(1).filter(r=>r[0]&&r[1]).map(r=>({
         id:Number(r[0])||Date.now(),
         date:String(r[1]),
@@ -1577,7 +1649,8 @@ async function loadFromSheets(){
         fx:r[7]?parseFloat(r[7])||null:null,
         method:String(r[9]||'Cash'),
         by:String(r[10]||'Owner'),
-        notes:String(r[11]||'')
+        notes:String(r[11]||''),
+        status:String(r[12]||'ACTIVE') // preserve DELETED status from sheet
       }));
     } else if(txnRows.length===1){
       TXN=[];// Only header row, no data
@@ -1604,7 +1677,8 @@ async function loadFromSheets(){
     save();
     renderDash();renderFX();renderDayClose();buildByDropdowns();
     msg.className='cfm cfm-ok';
-    msg.textContent='✓ Loaded '+TXN.length+' transactions · '+FX.length+' FX rates · '+CLOSED.length+' closed days from Google Sheets';
+    const loadedActive=activeTXN(TXN).length;
+    msg.textContent='✓ Loaded '+loadedActive+' active transactions ('+TXN.length+' total incl. deleted) · '+FX.length+' FX rates · '+CLOSED.length+' closed days from Google Sheets';
     GS.lastSync=new Date().toISOString();save();
   }catch(e){
     msg.className='cfm cfm-err';
