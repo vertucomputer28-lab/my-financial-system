@@ -164,8 +164,9 @@ tr:hover td{background:#fafaf8}
       <button class="btn btn-blue" onclick="syncAll()" style="font-size:13px;padding:8px 14px">⬆ Sync to Sheets</button>
       <button class="btn btn-green" onclick="loadFromSheets()" style="font-size:13px;padding:8px 14px">⬇ Load from Sheets</button>
       <button class="btn btn-outline" onclick="openGS()" style="font-size:13px;padding:8px 14px">Setup Guide</button>
+      <button class="btn btn-outline" onclick="resetSystem()" style="font-size:13px;padding:8px 14px;color:var(--red);border-color:var(--red-mid)">🗑 Reset Device Data</button>
     </div>
-    <div style="font-size:11px;color:var(--blue-dk);margin-top:6px;opacity:.75">Use <strong>Load from Sheets</strong> on a new device to restore all your data from the cloud.</div>
+    <div style="font-size:11px;color:var(--blue-dk);margin-top:6px;opacity:.75">Use <strong>Load from Sheets</strong> on a new device to restore all your data from the cloud. <strong>Reset Device Data</strong> clears local data only — Google Sheets is not affected.</div>
     <div class="cfm" id="sync-msg"></div>
   </div>
 
@@ -587,11 +588,12 @@ let STAFF=L.get('mfc3_staff')||['Owner'];
 let CLOSED=L.get('mfc3_closed')||[];  // array of ISO date strings
 let SNAP=L.get('mfc3_snap')||[];      // snapshots array
 function save(){L.set('mfc3_txn',TXN);L.set('mfc3_fx',FX);L.set('mfc3_rec',RECON);L.set('mfc3_gs',GS);L.set('mfc3_staff',STAFF);L.set('mfc3_closed',CLOSED);L.set('mfc3_snap',SNAP);}
-function isDayClosed(iso){return CLOSED.includes(iso);}
+function isDayClosed(iso){return CLOSED.includes(normDate(iso));}
 // Silently reset reconciliation to "Pending" for a given date when data changes
 function invalidateRecon(date){
+  const d=normDate(date);
   RECON=RECON.map(r=>{
-    if(r.date===date){return Object.assign({},r,{status:'pending',ok:false,usdOK:false,lrdOK:false,invalidated:true});}
+    if(normDate(r.date)===d){return Object.assign({},r,{status:'pending',ok:false,usdOK:false,lrdOK:false,invalidated:true});}
     return r;
   });
   save();
@@ -622,7 +624,36 @@ const fmtU=v=>'$'+(+v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximu
 const fmtL=v=>'LRD '+Math.round(+v||0).toLocaleString();
 const curFX=()=>FX.length?FX[FX.length-1].rate:178.5;
 const todayISO=()=>new Date().toISOString().split('T')[0];
-function dlabel(d){const dt=new Date(d+'T00:00:00');return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});}
+
+// ── DATE NORMALISATION & VALIDATION ─────────────────────────────────────────
+// normDate()       — single entry gate for all date values entering the system.
+//                    Returns YYYY-MM-DD or '' (empty = invalid, caller handles).
+// isValidISODate() — hard validator. Only a strict YYYY-MM-DD passes.
+//                    Used at save/load boundaries to REJECT bad data outright.
+//
+// Rule: NEVER compare raw date strings. ALWAYS pass through normDate() first.
+// Rule: NEVER store a date that fails isValidISODate().
+function normDate(d){
+  if(!d) return '';
+  // Fast path: already ISO format "2026-04-03" or "2026-04-03T..."
+  if(typeof d==='string'&&d.length>=10&&d.includes('-')){
+    return d.slice(0,10);
+  }
+  // Fallback — only used for non-standard inputs (e.g. legacy sheet data)
+  const dt=new Date(d);
+  if(isNaN(dt)) return '';
+  return dt.toISOString().slice(0,10);
+}
+function isValidISODate(d){
+  // Strict: must be exactly YYYY-MM-DD
+  return /^\d{4}-\d{2}-\d{2}$/.test(d);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// dlabel — display format for all dates in the UI.
+// Returns YYYY-MM-DD. Storage, comparison, and display all use the same format.
+// No locale formatting. No month names. No ambiguity.
+function dlabel(d){return normDate(d)||'—';}
 
 // Convert any transaction amount to USD for reporting
 // Always uses base_usd when available (set at save time using transaction's own rate)
@@ -677,7 +708,8 @@ function calcProfit(txns){
 function periodFilter(period,biz){
   const now=new Date();
   return activeTXN(TXN).filter(t=>{
-    const td=new Date(t.date+'T00:00:00');
+    // normDate() ensures t.date is always YYYY-MM-DD before Date parsing
+    const td=new Date(normDate(t.date)+'T00:00:00');
     let ok=true;
     if(period==='week'){const w=new Date(now);w.setDate(w.getDate()-6);ok=td>=w;}
     else if(period==='month'){ok=td.getMonth()===now.getMonth()&&td.getFullYear()===now.getFullYear();}
@@ -749,7 +781,17 @@ function updateCats(){
 
 let EDIT_ID=null;
 function saveEntry(){
-  const date=document.getElementById('f-date').value;
+  // ── DATE VALIDATION — reject before any processing ──────────────────────
+  // normDate() normalises the raw input. isValidISODate() is the hard gate.
+  // We do NOT silently fix bad dates — we reject and tell the user.
+  const date=normDate(document.getElementById('f-date').value);
+  if(!isValidISODate(date)){
+    const msg=document.getElementById('entry-msg');
+    msg.className='cfm cfm-err';
+    msg.textContent='Invalid date. Use the date picker — format must be YYYY-MM-DD.';
+    return;
+  }
+  // ─────────────────────────────────────────────────────────────────────────
   const biz=document.getElementById('f-biz').value;
   const type=document.getElementById('f-type').value;
   const cat=document.getElementById('f-cat').value;
@@ -913,7 +955,7 @@ function renderSnapshots(){
   const diffL=prev?(last.lrdCash-prev.lrdCash):null;
   el.innerHTML=`
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-      <div class="m"><div class="m-lbl">Latest Snapshot</div><div style="font-size:12px;color:var(--text2);margin-top:2px">${new Date(last.ts).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+      <div class="m"><div class="m-lbl">Latest Snapshot</div><div style="font-size:12px;color:var(--text2);margin-top:2px">${last.ts.slice(0,16).replace('T',' ')}</div>
         <div style="margin-top:8px;font-size:13px">
           <div>Net Profit: <strong>${fmtU(last.profit)}</strong>${diffP!==null?' <span style="color:'+( diffP>=0?'var(--green)':'var(--red-mid)')+';">'+(diffP>=0?'+':'')+fmtU(diffP)+'</span>':''}</div>
           <div>USD Cash: <strong>${fmtU(last.usdCash)}</strong>${diffU!==null?' <span style="color:'+( diffU>=0?'var(--green)':'var(--red-mid)')+';">'+(diffU>=0?'+':'')+fmtU(diffU)+'</span>':''}</div>
@@ -923,7 +965,7 @@ function renderSnapshots(){
       </div>
       <div class="m"><div class="m-lbl">Snapshot History</div>
         <div style="margin-top:6px;max-height:120px;overflow-y:auto">
-          ${[...SNAP].reverse().slice(0,8).map(s=>`<div style="font-size:12px;padding:3px 0;border-bottom:1px solid #f0eeea;display:flex;justify-content:space-between"><span style="color:var(--text3)">${new Date(s.ts).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</span><span>${fmtU(s.profit)}</span><span style="color:var(--text3);font-size:11px">${s.label}</span></div>`).join('')}
+          ${[...SNAP].reverse().slice(0,8).map(s=>`<div style="font-size:12px;padding:3px 0;border-bottom:1px solid #f0eeea;display:flex;justify-content:space-between"><span style="color:var(--text3)">${s.ts.slice(0,10)}</span><span>${fmtU(s.profit)}</span><span style="color:var(--text3);font-size:11px">${s.label}</span></div>`).join('')}
         </div>
       </div>
     </div>
@@ -989,7 +1031,7 @@ function renderDash(){
     return `<div class="bar-row"><div class="bar-lbl">${b}</div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${v>=0?cols[b]:'var(--red-mid)'}"></div></div><div class="bar-val" style="color:${v>=0?'var(--green)':'var(--red-mid)'}">${v>=0?'':'-'}${fmtU(Math.abs(v))}</div></div>`;
   }).join('');
 
-  const todayT=activeTXN(TXN).filter(t=>t.date===todayISO());
+  const todayT=activeTXN(TXN).filter(t=>normDate(t.date)===todayISO());
   const todayInc=todayT.filter(t=>t.type==='Income').reduce((a,t)=>a+toUSD(t),0);
   const todayExp=todayT.filter(t=>t.type==='Expense').reduce((a,t)=>a+toUSD(t),0);
   document.getElementById('kpi-grid').innerHTML=`
@@ -1027,10 +1069,10 @@ function renderDash(){
 
   // Expense spike — today vs last 3 active days only
   const todayISO2=todayISO();
-  const todayExp2=activeTXN(TXN).filter(t=>t.date===todayISO2&&t.type==='Expense').reduce((a,t)=>a+toUSD(t),0);
+  const todayExp2=activeTXN(TXN).filter(t=>normDate(t.date)===todayISO2&&t.type==='Expense').reduce((a,t)=>a+toUSD(t),0);
   const last3Days=[];
   for(let i=1;i<=3;i++){const d=new Date();d.setDate(d.getDate()-i);last3Days.push(d.toISOString().split('T')[0]);}
-  const last3Exp=last3Days.map(d=>activeTXN(TXN).filter(t=>t.date===d&&t.type==='Expense').reduce((a,t)=>a+toUSD(t),0));
+  const last3Exp=last3Days.map(d=>activeTXN(TXN).filter(t=>normDate(t.date)===d&&t.type==='Expense').reduce((a,t)=>a+toUSD(t),0));
   const activeDays3=last3Exp.filter(v=>v>0);
   if(activeDays3.length>=2&&todayExp2>0){
     const avg3=activeDays3.reduce((a,v)=>a+v,0)/activeDays3.length;
@@ -1041,13 +1083,13 @@ function renderDash(){
   // Missing entry — ONLY if yesterday had transactions AND today has none (not more)
   const yISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toISOString().split('T')[0];})();
   const twoDISO=(()=>{const d=new Date();d.setDate(d.getDate()-2);return d.toISOString().split('T')[0];})();
-  const todayTxns=activeTXN(TXN).filter(t=>t.date===todayISO2);
-  const yTxns=activeTXN(TXN).filter(t=>t.date===yISO);
+  const todayTxns=activeTXN(TXN).filter(t=>normDate(t.date)===todayISO2);
+  const yTxns=activeTXN(TXN).filter(t=>normDate(t.date)===yISO);
   if(yTxns.length>0&&todayTxns.length===0&&!isDayClosed(todayISO2)){
     alerts.push({c:'a-warn',m:'No entries today yet. Yesterday had '+yTxns.length+' transaction(s). <button onclick="markNoBusinessDay(\x27'+todayISO2+'\x27)" style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--amber-dk);background:var(--amber-lt);color:var(--amber-dk);cursor:pointer">Mark as No Business Day</button>'});
   }
   // Also check 2 days ago if yesterday was also empty (catches 2-day gaps)
-  const twoDTxns=activeTXN(TXN).filter(t=>t.date===twoDISO);
+  const twoDTxns=activeTXN(TXN).filter(t=>normDate(t.date)===twoDISO);
   if(twoDTxns.length>0&&yTxns.length===0&&!isDayClosed(yISO)){
     alerts.push({c:'a-warn',m:'No entries on '+dlabel(yISO)+'. <button onclick="markNoBusinessDay(\x27'+yISO+'\x27)" style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--amber-dk);background:var(--amber-lt);color:var(--amber-dk);cursor:pointer">Mark as No Business Day</button>'});
   }
@@ -1061,7 +1103,7 @@ function renderDash(){
     if(!lastRecon.lrdOK&&lastRecon.lrdDiff!==undefined)
       alerts.push({c:'a-bad',m:'LRD Cash Mismatch on '+dlabel(lastRecon.date)+': '+fmtL(Math.abs(lastRecon.lrdDiff))+' difference. Investigate before next shift.'});
     if(lastRecon.ok){
-      const daysSince=Math.floor((new Date()-new Date(lastRecon.date+'T00:00:00'))/(1000*60*60*24));
+      const daysSince=Math.floor((new Date()-new Date(normDate(lastRecon.date)+'T00:00:00'))/(1000*60*60*24));
       if(daysSince>1) alerts.push({c:'a-warn',m:'Last reconciliation was '+daysSince+' days ago. Run daily for accuracy.'});
     }
   } else if(TXN.length>3){
@@ -1168,7 +1210,7 @@ let _reconData={};
 function calcPhysicalBalances(date, biz){
   // Step 1: Get all ACTIVE transactions for this date/biz — same activeTXN() used everywhere
   const allActive=activeTXN(TXN).filter(t=>
-    t.date===date &&
+    normDate(t.date)===normDate(date) &&
     (biz==='All'||t.biz===biz)
   );
 
@@ -1212,10 +1254,11 @@ function calcPhysicalBalances(date, biz){
 }
 
 function getAutoOpening(date,biz){
+  const d=normDate(date);
   // Find most recent reconciliation before this date
   const prior=[...RECON]
-    .filter(r=>r.date<date&&(biz==='All'?true:r.biz===biz||r.biz==='All'))
-    .sort((a,b)=>b.date.localeCompare(a.date));
+    .filter(r=>normDate(r.date)<d&&(biz==='All'?true:r.biz===biz||r.biz==='All'))
+    .sort((a,b)=>normDate(b.date).localeCompare(normDate(a.date)));
   if(prior.length){
     return{
       usd:prior[0].usdActual,
@@ -1227,7 +1270,7 @@ function getAutoOpening(date,biz){
 }
 
 function calcRecon(){
-  const d=document.getElementById('r-date').value;
+  const d=normDate(document.getElementById('r-date').value);
   const biz=document.getElementById('r-biz').value;
   if(!d){alert('Select a date first.');return;}
 
@@ -1371,8 +1414,8 @@ function runRecon(){
 
   document.getElementById('recon-result-card').style.display='block';
 
-  // Save to history
-  RECON.push({
+  // Upsert into RECON — same date+biz replaces existing entry, never duplicates
+  const newEntry={
     date:d,biz,
     usdOpening:usdOpen,lrdOpening:lrdOpen,
     usdExpected:_usdExpected,lrdExpected:_lrdExpected,
@@ -1381,7 +1424,13 @@ function runRecon(){
     usdOK,lrdOK,ok:allOK,
     mmUSD,mmLRD,bankUSD,bankLRD,
     ts:new Date().toISOString()
-  });
+  };
+  const existIdx=RECON.findIndex(r=>normDate(r.date)===normDate(d)&&r.biz===biz);
+  if(existIdx>=0){
+    RECON[existIdx]=newEntry; // replace — same day/biz re-reconciliation
+  } else {
+    RECON.push(newEntry);
+  }
   takeSnapshot('Reconciliation — '+dlabel(d));
   save();renderRecon();
 }
@@ -1422,14 +1471,17 @@ function flagOpenOverride(){}
 
 // REPORTS
 function buildReport(){
+  // NOTE: Reports reads directly from the RECON array — the single source of truth.
+  // calcRecon() is not called here because it requires user-entered physical cash counts.
+  // If RECON is empty or stale, the reconciliation log section will say so clearly.
   const period=document.getElementById('rpt-period').value;
   const biz=document.getElementById('rpt-biz').value;
   const txns=periodFilter(period,biz);
   const p=calcProfit(txns);
   const pl={week:'This Week',month:'This Month',last_month:'Last Month',quarter:'This Quarter',all:'All Time'};
   const now=new Date();
-  const genDate=now.toLocaleDateString('en-GB',{day:'2-digit',month:'long',year:'numeric'});
-  const genTime=now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const genDate=now.toISOString().slice(0,10);
+  const genTime=now.toISOString().slice(11,16)+' UTC';
   const label=pl[period];
   const bizLabel=biz==='all'?'All Businesses':biz;
   const BIZES=['Bar','Restaurant','Hall'];
@@ -1555,7 +1607,18 @@ function buildReport(){
 
 <div class="card">
   <div class="card-title">G. Reconciliation Log</div>
-  ${RECON.length?`<table class="rpt-tbl"><thead><tr><th>Date</th><th>Business</th><th>Expected Cash</th><th>Actual Cash</th><th>Difference</th><th>Mobile Money</th><th>Bank</th><th>Status</th></tr></thead><tbody>${RECON.map(r=>`<tr><td>${dlabel(r.date)}</td><td>${r.biz}</td><td>${fmtU(r.expected)}</td><td>${fmtU(r.actual)}</td><td style="font-weight:600;color:${r.ok?'var(--green)':'var(--red-mid)'}">${r.diff>=0?'+':''}${fmtU(r.diff)}</td><td style="font-size:12px">${r.mmAmt?fmtU(r.mmAmt):'—'}</td><td style="font-size:12px">${r.bankAmt?fmtU(r.bankAmt):'—'}</td><td><span class="badge ${r.ok?'b-inc':'b-exp'}">${r.ok?'OK':'MISMATCH'}</span></td></tr>`).join('')}</tbody></table>`:'<div style="font-size:13px;color:var(--text2)">No reconciliation records for this period.</div>'}
+  ${RECON.length?`<table class="rpt-tbl"><thead><tr><th>Date</th><th>Biz</th><th>USD Expected</th><th>USD Actual</th><th>USD Diff</th><th>LRD Expected</th><th>LRD Actual</th><th>LRD Diff</th><th>Status</th></tr></thead><tbody>${RECON.map(r=>{
+    const usdExp=Number(r.usdExpected||0);
+    const usdAct=Number(r.usdActual||0);
+    const usdDif=Number(r.usdDiff||0);
+    const lrdExp=Number(r.lrdExpected||0);
+    const lrdAct=Number(r.lrdActual||0);
+    const lrdDif=Number(r.lrdDiff||0);
+    const usdOK=r.usdOK;const lrdOK=r.lrdOK;const allOK=r.ok;
+    const status=allOK?'OK':!usdOK&&!lrdOK?'BOTH MISMATCH':!usdOK?'USD MISMATCH':'LRD MISMATCH';
+    const badgeCls=allOK?'b-inc':usdOK||lrdOK?'b-draw':'b-exp';
+    return `<tr${r.invalidated?' style="opacity:.55"':''}><td>${dlabel(r.date)}</td><td>${r.biz}</td><td>${fmtU(usdExp)}</td><td>${fmtU(usdAct)}</td><td style="font-weight:600;color:${usdOK?'var(--green)':'var(--red-mid)'}">${usdDif>=0?'+':''}${fmtU(Math.abs(usdDif))} ${usdOK?'✓':'⚠'}</td><td>${fmtL(lrdExp)}</td><td>${fmtL(lrdAct)}</td><td style="font-weight:600;color:${lrdOK?'var(--green)':'var(--red-mid)'}">${lrdDif>=0?'+':''}${fmtL(Math.abs(lrdDif))} ${lrdOK?'✓':'⚠'}</td><td><span class="badge ${badgeCls}">${r.invalidated?'Pending':status}</span></td></tr>`;
+  }).join('')}</tbody></table>`:'<div style="font-size:13px;color:var(--text2)">No reconciliation records for this period.</div>'}
 </div>
 
 <div class="card" style="border:2px solid var(--border)">
@@ -1637,6 +1700,13 @@ async function loadFromSheets(){
   if(!GS.on||!GS.url){msg.className='cfm cfm-err';msg.textContent='Not connected. Click Setup Guide first.';return;}
   if(!confirm('Load data from Google Sheets?\n\nThis will REPLACE all data currently on this device with your cloud backup.\n\nMake sure you have synced this device first if it has newer data.')){return;}
   msg.className='cfm';msg.textContent='Loading from Google Sheets…';
+
+  // ── Clear local state before loading — prevents ghost data from stale cache ──
+  TXN=[];
+  _reconData={};
+  RECON=[];
+  // ─────────────────────────────────────────────────────────────────────────────
+
   try{
     // Load transactions
     const txnRes=await fetch(GS.url+'?sheetId='+encodeURIComponent(GS.id)+'&tab=Master+Log');
@@ -1645,9 +1715,10 @@ async function loadFromSheets(){
     // Row 0 is headers: ID,Date,Business,Type,Category,Amount USD,Method,Handled By,Notes
     if(txnRows.length>1){
       // Headers: ID,Date,Biz,Type,Cat,Currency,Amt,FX,USDEquiv,Method,By,Notes,Status
+      let skippedTxn=0;
       TXN=txnRows.slice(1).filter(r=>r[0]&&r[1]).map(r=>({
         id:Number(r[0])||Date.now(),
-        date:String(r[1]),
+        date:normDate(String(r[1])),   // normalise first
         biz:String(r[2]||''),
         type:String(r[3]||''),
         cat:String(r[4]||''),
@@ -1657,8 +1728,17 @@ async function loadFromSheets(){
         method:String(r[9]||'Cash'),
         by:String(r[10]||'Owner'),
         notes:String(r[11]||''),
-        status:String(r[12]||'ACTIVE') // preserve DELETED status from sheet
-      }));
+        status:String(r[12]||'ACTIVE')
+      })).filter(t=>{
+        // Hard validation — rows with bad dates are skipped entirely, never stored
+        if(!isValidISODate(t.date)){
+          console.warn('[MFC] Bad date from sheet — row skipped:',t);
+          skippedTxn++;
+          return false;
+        }
+        return true;
+      });
+      if(skippedTxn>0) console.warn('[MFC] loadFromSheets: '+skippedTxn+' transaction row(s) skipped due to invalid dates.');
     } else if(txnRows.length===1){
       TXN=[];// Only header row, no data
     }
@@ -1669,8 +1749,14 @@ async function loadFromSheets(){
     const fxRows=fxData.rows||[];
     if(fxRows.length>1){
       FX=fxRows.slice(1).filter(r=>r[0]&&r[1]).map(r=>({
-        date:String(r[0]),rate:parseFloat(r[1])||178.5,src:String(r[2]||'Central Bank of Liberia')
-      }));
+        date:normDate(String(r[0])),rate:parseFloat(r[1])||178.5,src:String(r[2]||'Central Bank of Liberia')
+      })).filter(r=>{
+        if(!isValidISODate(r.date)){
+          console.warn('[MFC] Bad FX rate date from sheet — row skipped:',r);
+          return false;
+        }
+        return true;
+      });
     }
 
     // Load closed days
@@ -1678,14 +1764,21 @@ async function loadFromSheets(){
     const cdData=await cdRes.json();
     const cdRows=cdData.rows||[];
     if(cdRows.length>1){
-      CLOSED=cdRows.slice(1).filter(r=>r[0]).map(r=>String(r[0]));
+      CLOSED=cdRows.slice(1).filter(r=>r[0]).map(r=>normDate(String(r[0]))).filter(d=>{
+        if(!isValidISODate(d)){
+          console.warn('[MFC] Bad closed-day date from sheet — entry skipped:',d);
+          return false;
+        }
+        return true;
+      });
     }
 
     save();
     renderDash();renderFX();renderDayClose();buildByDropdowns();
     msg.className='cfm cfm-ok';
     const loadedActive=activeTXN(TXN).length;
-    msg.textContent='✓ Loaded '+loadedActive+' active transactions ('+TXN.length+' total incl. deleted) · '+FX.length+' FX rates · '+CLOSED.length+' closed days from Google Sheets';
+    const skippedNote=TXN.length===0&&txnRows.length>1?' (check console — some rows may have been skipped due to bad dates)':'';
+    msg.textContent='✓ Loaded '+loadedActive+' active transactions ('+TXN.length+' total incl. deleted) · '+FX.length+' FX rates · '+CLOSED.length+' closed days from Google Sheets'+skippedNote;
     GS.lastSync=new Date().toISOString();save();
   }catch(e){
     msg.className='cfm cfm-err';
@@ -1713,8 +1806,8 @@ function renderDayClose(){
   } else {listEl.textContent='No closed days recorded yet.';}
 }
 function toggleDayClose(){
-  const d=document.getElementById('dc-date').value||todayISO();
-  const txnsOnDay=TXN.filter(t=>t.date===d);
+  const d=normDate(document.getElementById('dc-date').value||todayISO());
+  const txnsOnDay=activeTXN(TXN).filter(t=>normDate(t.date)===d);
   if(!isDayClosed(d)){
     const cashTxns=txnsOnDay.filter(t=>!t.method||t.method==='Cash');
     if(cashTxns.length===0&&txnsOnDay.length>0){
@@ -1750,6 +1843,35 @@ function addStaffMember(){
   STAFF.push(clean);save();buildByDropdowns();
   alert(clean+' added. They will now appear in the Handled By dropdown.');
 }
+
+// ── HARD RESET ───────────────────────────────────────────────────────────────
+// Clears ALL local device state. Google Sheets data is NOT touched.
+// Use this to resolve corrupted local state, then reload from Sheets.
+function resetSystem(){
+  if(!confirm('RESET DEVICE DATA?\n\nThis clears ALL local transactions, FX rates, reconciliation records, and snapshots from this device.\n\nYour Google Sheets data is NOT affected. You can reload from Sheets afterwards.\n\nProceed?'))return;
+  // Clear localStorage
+  localStorage.clear();
+  // Reset all runtime state
+  TXN=[];
+  FX=[{date:todayISO(),rate:178.50,src:'Central Bank of Liberia'}];
+  RECON=[];
+  GS={id:'',url:'',on:false};
+  STAFF=['Owner'];
+  CLOSED=[];
+  SNAP=[];
+  _reconData={};
+  EDIT_ID=null;
+  // Re-persist defaults so the app is in a clean known state
+  save();
+  // Re-render everything
+  renderDash();renderFX();renderDayClose();buildByDropdowns();
+  document.getElementById('gs-btn').textContent='⚡ Connect Sheets';
+  document.getElementById('gs-btn').className='gs-btn';
+  document.getElementById('sync-msg').className='cfm cfm-ok';
+  document.getElementById('sync-msg').textContent='✓ Device data cleared. Connect Sheets and use Load from Sheets to restore.';
+  setTimeout(()=>document.getElementById('sync-msg').textContent='',9000);
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // INIT
 document.getElementById('f-date').value=todayISO();
