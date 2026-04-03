@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
+
 <title>Master Financial Control — Monrovia, Liberia</title>
 <style>
 :root{--green:#1D9E75;--green-lt:#E1F5EE;--green-dk:#085041;--amber:#BA7517;--amber-lt:#FAEEDA;--amber-dk:#633806;--red:#A32D2D;--red-lt:#FCEBEB;--red-mid:#E24B4A;--blue:#185FA5;--blue-lt:#E6F1FB;--blue-dk:#042C53;--gray-lt:#F1EFE8;--gray:#5F5E5A;--gray-dk:#2C2C2A;--border:#d0cec8;--bg:#fafaf8;--surface:#fff;--text:#1a1a18;--text2:#5F5E5A;--text3:#888780;--r:10px;--rs:6px;--sh:0 1px 3px rgba(0,0,0,.08)}
@@ -1880,6 +1883,12 @@ document.getElementById('dc-date').value=todayISO();
 document.getElementById('dc-date').addEventListener('change',renderDayClose);
 updateCats();renderDash();renderFX();renderDayClose();buildByDropdowns();
 if(GS.on){document.getElementById('gs-id').value=GS.id;document.getElementById('gs-url').value=GS.url;document.getElementById('gs-btn').textContent='Sheets Connected';document.getElementById('gs-btn').className='gs-btn on';}
+</script>
+  <script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js")
+    .then(() => console.log("Service Worker Registered"));
+}
 </script>
 </body>
 </html>
