@@ -709,8 +709,9 @@ function saveEntry(){
     msg.className='cfm cfm-err';msg.textContent='Exchange rate required for LRD transactions.';return;
   }
   const fx=(isNaN(fxRaw)||fxRaw<50)?null:fxRaw;
+  const base_usd=parseFloat((cur==='LRD'&&fx?amt/fx:amt).toFixed(2));
 
-  const txn={date,biz,type,cat,amt,cur,method,by,notes,fx};
+  const txn={date,biz,type,cat,amt,cur,method,by,notes,fx,base_usd};
   if(EDIT_ID!==null){
     const idx=TXN.findIndex(t=>t.id===EDIT_ID);
     if(idx>-1){
