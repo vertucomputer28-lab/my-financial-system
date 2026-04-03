@@ -568,12 +568,13 @@ const todayISO=()=>new Date().toISOString().split('T')[0];
 function dlabel(d){const dt=new Date(d+'T00:00:00');return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});}
 
 // Convert any transaction amount to USD for reporting
+// Always uses base_usd when available (set at save time using transaction's own rate)
+// Falls back to live calculation for legacy transactions saved before base_usd was added
 function toUSD(t){
-  if(t.cur==='LRD'){
-    const rate=t.fx||curFX();
-    return t.amt/rate;
-  }
-  return t.amt; // USD or no currency field (legacy)
+  if(typeof t.base_usd==='number'&&!isNaN(t.base_usd)) return t.base_usd;
+  // Legacy fallback
+  if(t.cur==='LRD'){const rate=t.fx||curFX();return t.amt/rate;}
+  return t.amt;
 }
 
 // Separate cash balances by currency (excludes Currency Exchange — handled separately)
@@ -980,7 +981,7 @@ function renderLedger(){
     </tr>`;
   }).join('');
   document.getElementById('ledger-count').textContent=rows.length;
-  document.getElementById('ledger-total').textContent=fmtU(rows.reduce((a,t)=>a+t.amt,0));
+  document.getElementById('ledger-total').textContent=fmtU(rows.reduce((a,t)=>a+toUSD(t),0));
 }
 // FX
 function saveFX(){
@@ -1325,15 +1326,15 @@ function buildReport(){
           {key:'Mobile Money (MTN)',label:'Mobile Money (MTN)',note:'MTN statement'},
           {key:'Bank Transfer',label:'Bank Transfer',note:'Bank statement (UB/Ecobank)'}
         ];
-        const grandTotal=txns.reduce((a,t)=>a+t.amt,0);
+        const grandTotal=txns.reduce((a,t)=>a+toUSD(t),0);
         return methods.map(m=>{
           const mt=txns.filter(t=>(t.method||'Cash')===m.key);
-          const total=mt.reduce((a,t)=>a+t.amt,0);
+          const total=mt.reduce((a,t)=>a+toUSD(t),0);
           if(!total&&!mt.length)return '';
           return `<tr><td><strong>${m.label}</strong></td><td style="font-weight:600">${fmtU(total)}</td><td>${mt.length}</td><td>${grandTotal>0?(total/grandTotal*100).toFixed(1)+'%':'—'}</td><td style="font-size:12px;color:var(--text2)">${m.note}</td></tr>`;
         }).join('');
       })()}
-      <tr class="tot"><td>Total All Methods</td><td>${fmtU(txns.reduce((a,t)=>a+t.amt,0))}</td><td>${txns.length}</td><td>100%</td><td></td></tr>
+      <tr class="tot"><td>Total All Methods</td><td>${fmtU(txns.reduce((a,t)=>a+toUSD(t),0))}</td><td>${txns.length}</td><td>100%</td><td></td></tr>
     </tbody>
   </table>
   <div style="font-size:12px;color:var(--text2);margin-top:6px">Cash reconciles via nightly physical count. Mobile Money and Bank reconcile via their own statements — match totals above against your statements.</div>
@@ -1349,9 +1350,9 @@ function buildReport(){
         if(!handlers.length)return '<tr><td colspan="5" style="color:var(--text3);text-align:center">No handler data — update existing transactions via Log Entry</td></tr>';
         return handlers.map(h=>{
           const ht=txns.filter(t=>(t.by||'Owner')===h);
-          const htInc=ht.filter(t=>t.type==='Income').reduce((a,t)=>a+t.amt,0);
-          const htOut=ht.filter(t=>t.type!=='Income').reduce((a,t)=>a+t.amt,0);
-          return `<tr><td><strong>${h}</strong></td><td>${ht.length}</td><td>${fmtU(ht.reduce((a,t)=>a+t.amt,0))}</td><td style="color:var(--green)">${fmtU(htInc)}</td><td style="color:var(--red-mid)">${fmtU(htOut)}</td></tr>`;
+          const htInc=ht.filter(t=>t.type==='Income').reduce((a,t)=>a+toUSD(t),0);
+          const htOut=ht.filter(t=>t.type!=='Income').reduce((a,t)=>a+toUSD(t),0);
+          return `<tr><td><strong>${h}</strong></td><td>${ht.length}</td><td>${fmtU(ht.reduce((a,t)=>a+toUSD(t),0))}</td><td style="color:var(--green)">${fmtU(htInc)}</td><td style="color:var(--red-mid)">${fmtU(htOut)}</td></tr>`;
         }).join('');
       })()}
     </tbody>
@@ -1370,7 +1371,7 @@ function buildReport(){
       <tr class="tot"><td>Net Retained Profit</td><td style="color:${p.net>=0?'var(--green)':'var(--red-mid)'}">${fmtU(p.net)}</td><td>${fmtL(p.net*curFX())}</td><td>After all draws — stays in business</td></tr>
     </tbody>
   </table>
-  ${draws.length?`<div style="font-size:12px;color:var(--text2);margin-top:8px"><strong>Withdrawal detail:</strong> ${draws.map(d=>dlabel(d.date)+' '+fmtU(d.amt)+' ('+d.method+') by '+(d.by||'Owner')).join(' · ')}</div>`:''}
+  ${draws.length?`<div style="font-size:12px;color:var(--text2);margin-top:8px"><strong>Withdrawal detail:</strong> ${draws.map(d=>dlabel(d.date)+' '+fmtU(toUSD(d))+(d.cur==='LRD'?' ('+fmtL(d.amt)+')':'')+' ('+d.method+') by '+(d.by||'Owner')).join(' · ')}</div>`:''}
 </div>
 
 <div class="card">
@@ -1378,7 +1379,7 @@ function buildReport(){
   <table class="rpt-tbl">
     <thead><tr><th>Date</th><th>Business</th><th>Type</th><th>Category</th><th>Amount (USD)</th><th>Method</th><th>By</th><th>Notes</th></tr></thead>
     <tbody>
-      ${txns.length?txns.map(t=>`<tr><td>${dlabel(t.date)}</td><td>${t.biz}</td><td><span class="badge ${{Income:'b-inc',Expense:'b-exp','Owner Draw':'b-draw'}[t.type]||''}">${t.type}</span></td><td>${t.cat}</td><td style="font-weight:600">${fmtU(t.amt)}</td><td style="font-size:12px">${t.method||'Cash'}</td><td style="font-size:12px">${t.by||'Owner'}</td><td style="font-size:12px;color:var(--text2)">${t.notes||'—'}</td></tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:var(--text3)">No transactions in this period</td></tr>'}
+      ${txns.length?txns.map(t=>`<tr><td>${dlabel(t.date)}</td><td>${t.biz}</td><td><span class="badge ${{Income:'b-inc',Expense:'b-exp','Owner Draw':'b-draw','Currency Exchange':'b-fx'}[t.type]||''}">${t.type}</span></td><td>${t.cat}</td><td style="font-weight:600">${t.cur==='LRD'?fmtL(t.amt)+' <span style="font-size:10px;color:var(--text3)">≈ '+fmtU(toUSD(t))+'</span>':fmtU(toUSD(t))}</td><td style="font-size:12px">${t.method||'Cash'}</td><td style="font-size:12px">${t.by||'Owner'}</td><td style="font-size:12px;color:var(--text2)">${t.notes||'—'}</td></tr>`).join(''):'<tr><td colspan="8" style="text-align:center;color:var(--text3)">No transactions in this period</td></tr>'}
     </tbody>
     ${txns.length?`<tfoot><tr class="tot"><td colspan="4">Total (${txns.length} transactions)</td><td>${fmtU(p.inc)}</td><td colspan="3"></td></tr></tfoot>`:''}
   </table>
