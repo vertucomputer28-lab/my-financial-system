@@ -222,8 +222,14 @@ tr:hover td{background:#fafaf8}
         <label>Notes</label>
         <textarea id="f-notes" placeholder="Brief description — what was this for?"></textarea>
       </div>
+      <div class="fg fg-full">
+        <label>Exchange Rate (LRD per $1 USD) — defaults to today's rate, change if wholesale/market rate differs</label>
+        <input type="number" id="f-fx" step="0.01" min="50" max="1000" placeholder="Auto-filled from current rate">
+        <div style="font-size:11px;color:var(--text2);margin-top:3px">Current rate: <strong id="f-fx-hint"></strong> · Change this if the supplier/market used a different rate</div>
+      </div>
     </div>
     <button class="btn btn-primary" onclick="saveEntry()">Save Transaction</button>
+    <button class="btn btn-outline" id="edit-cancel-btn" onclick="cancelEdit()" style="display:none;margin-top:8px;width:100%;justify-content:center;color:var(--red);border-color:var(--red)">✕ Cancel Edit</button>
     <div class="cfm" id="entry-msg"></div>
   </div>
 
@@ -286,7 +292,7 @@ tr:hover td{background:#fafaf8}
   <div class="card" style="padding:0;overflow:hidden">
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>Date</th><th>Business</th><th>Type</th><th>Category</th><th>Amount</th><th>Method</th><th>By</th><th>Notes</th></tr></thead>
+        <thead><tr><th>Date</th><th>Business</th><th>Type</th><th>Category</th><th>Amount (USD)</th><th>LRD Rate</th><th>Method</th><th>By</th><th>Notes</th><th>Actions</th></tr></thead>
         <tbody id="ledger-body"></tbody>
         <tfoot><tr class="tfoot">
           <td colspan="5"><span id="ledger-count">0</span> transactions shown</td>
@@ -546,6 +552,7 @@ function updateCats(){
   sel.innerHTML=cats.map(c=>`<option>${c}</option>`).join('');
 }
 
+let EDIT_ID=null; // ID of transaction being edited, null = new entry
 function saveEntry(){
   const date=document.getElementById('f-date').value;
   const biz=document.getElementById('f-biz').value;
@@ -555,24 +562,94 @@ function saveEntry(){
   const method=document.getElementById('f-method').value;
   const by=document.getElementById('f-by').value||'Owner';
   const notes=document.getElementById('f-notes').value.trim();
+  const fxRaw=parseFloat(document.getElementById('f-fx').value);
+  const fx=(!isNaN(fxRaw)&&fxRaw>=50)?fxRaw:curFX();
   const msg=document.getElementById('entry-msg');
   if(!date||!biz||!type||!cat||!amt||amt<=0||cat.startsWith('—')){
     msg.className='cfm cfm-err';msg.textContent='Fill in all required fields correctly.';return;
   }
-  if(isDayClosed(date)){
-    if(!confirm('WARNING: '+dlabel(date)+' has been marked as closed. Adding a transaction to a closed day breaks the audit record.\n\nAre you sure you want to proceed?')){return;}
-    msg.className='cfm cfm-err';msg.textContent='⚠ Added to CLOSED day '+dlabel(date)+'. Review reconciliation.';
+  const txn={date,biz,type,cat,amt,method,by,notes,fx};
+  if(EDIT_ID!==null){
+    // Editing existing transaction
+    const idx=TXN.findIndex(t=>t.id===EDIT_ID);
+    if(idx>-1){
+      if(isDayClosed(TXN[idx].date)&&!confirm('WARNING: This transaction is on a CLOSED day. Editing it will affect the audit record. Proceed?')){return;}
+      TXN[idx]=Object.assign({},TXN[idx],txn);
+      msg.className='cfm cfm-ok';msg.textContent='✓ Transaction updated — '+type+' · '+fmtU(amt)+' · Rate: '+fx.toFixed(2)+' LRD';
+    }
+    EDIT_ID=null;
+    document.querySelector('#tab-log .btn-primary').textContent='Save Transaction';
+    document.getElementById('edit-cancel-btn').style.display='none';
   } else {
-    msg.className='cfm cfm-ok';
-    msg.textContent='Saved — '+type+' · '+cat+' · '+fmtU(amt)+' · '+biz+' · By: '+by;
-    setTimeout(()=>msg.textContent='',4000);
+    // New transaction
+    if(isDayClosed(date)){
+      if(!confirm('WARNING: '+dlabel(date)+' has been marked as closed. Adding a transaction to a closed day breaks the audit record.\n\nAre you sure you want to proceed?')){return;}
+      msg.className='cfm cfm-err';msg.textContent='⚠ Added to CLOSED day '+dlabel(date)+'. Review reconciliation.';
+    } else {
+      msg.className='cfm cfm-ok';
+      msg.textContent='Saved — '+type+' · '+cat+' · '+fmtU(amt)+' · Rate: '+fx.toFixed(2)+' LRD · By: '+by;
+      setTimeout(()=>msg.textContent='',4000);
+    }
+    TXN.push(Object.assign({id:Date.now()},txn));
+    syncRow(TXN[TXN.length-1]);
   }
-  TXN.push({id:Date.now(),date,biz,type,cat,amt,method,by,notes});
-  save();syncRow(TXN[TXN.length-1]);
+  save();
   document.getElementById('f-amt').value='';
   document.getElementById('f-notes').value='';
-  renderDash();
-  renderDayClose();
+  document.getElementById('f-fx').value='';
+  updateFxHint();
+  renderDash();renderDayClose();
+}
+function cancelEdit(){
+  EDIT_ID=null;
+  document.querySelector('#tab-log .btn-primary').textContent='Save Transaction';
+  document.getElementById('edit-cancel-btn').style.display='none';
+  document.getElementById('f-date').value=todayISO();document.getElementById('f-fx').value='';updateFxHint();
+  document.getElementById('f-biz').value='';
+  document.getElementById('f-type').value='';
+  document.getElementById('f-cat').innerHTML='<option value="">— Select type first —</option>';
+  document.getElementById('f-amt').value='';
+  document.getElementById('f-notes').value='';
+  document.getElementById('f-fx').value='';
+  updateFxHint();
+  document.getElementById('entry-msg').textContent='';
+}
+function editTxn(id){
+  const t=TXN.find(x=>x.id===id);
+  if(!t)return;
+  EDIT_ID=id;
+  go('log',document.querySelector('.nav button:nth-child(2)'));
+  document.getElementById('f-date').value=t.date;
+  document.getElementById('f-biz').value=t.biz;
+  document.getElementById('f-type').value=t.type;
+  updateCats();
+  document.getElementById('f-cat').value=t.cat;
+  document.getElementById('f-amt').value=t.amt;
+  document.getElementById('f-method').value=t.method||'Cash';
+  document.getElementById('f-by').value=t.by||'Owner';
+  document.getElementById('f-notes').value=t.notes||'';
+  document.getElementById('f-fx').value=t.fx||curFX();
+  updateFxHint();
+  document.querySelector('#tab-log .btn-primary').textContent='Update Transaction';
+  document.getElementById('edit-cancel-btn').style.display='inline-flex';
+  document.getElementById('entry-msg').className='cfm a-info';
+  document.getElementById('entry-msg').textContent='Editing transaction from '+dlabel(t.date)+' — make changes and click Update Transaction';
+  document.getElementById('f-date').scrollIntoView({behavior:'smooth'});
+}
+function deleteTxn(id){
+  const t=TXN.find(x=>x.id===id);
+  if(!t)return;
+  if(isDayClosed(t.date)){
+    if(!confirm('WARNING: This transaction is on a CLOSED day. Deleting it will affect the audit record.\n\nFor auditing, consider logging a reversal entry instead (same transaction with negative amount).\n\nDelete anyway?'))return;
+  } else {
+    if(!confirm('Delete this transaction?\n\n'+dlabel(t.date)+' · '+t.biz+' · '+t.type+' · '+fmtU(t.amt)+'\n\nThis cannot be undone.'))return;
+  }
+  TXN=TXN.filter(x=>x.id!==id);
+  save();renderLedger();renderDash();
+}
+function updateFxHint(){
+  const el=document.getElementById('f-fx-hint');
+  if(el)el.textContent='1 USD = '+curFX().toFixed(2)+' LRD';
 }
 
 // DASHBOARD
@@ -711,15 +788,22 @@ function renderLedger(){
   body.innerHTML=rows.map(t=>{
     const locked=isDayClosed(t.date);
     const mc=methodClass(t.method);
+    const rate=t.fx?t.fx.toFixed(2):'—';
+    const lrdAmt=t.fx?(t.amt*t.fx):null;
     return `<tr${locked?' class="day-locked"':''}>
       <td style="white-space:nowrap;font-size:12px">${dlabel(t.date)}${locked?'<span class="lock-badge">CLOSED</span>':''}</td>
       <td><span class="pill">${t.biz}</span></td>
       <td><span class="badge ${bc[t.type]||''}">${t.type}</span></td>
       <td style="font-size:12px;color:var(--text2)">${t.cat}</td>
-      <td style="font-weight:700;color:${t.type==='Income'?'var(--green)':t.type==='Owner Draw'?'var(--amber)':'var(--red-mid)'}">${fmtU(t.amt)}</td>
+      <td style="font-weight:700;color:${t.type==='Income'?'var(--green)':t.type==='Owner Draw'?'var(--amber)':'var(--red-mid)'}">${fmtU(t.amt)}${lrdAmt?'<div style="font-size:10px;color:var(--text3);font-weight:400">LRD '+Math.round(lrdAmt).toLocaleString()+'</div>':''}</td>
+      <td style="font-size:12px;color:var(--text2)">${rate==='—'?'—':rate+' LRD/$'}</td>
       <td><span class="method-pill ${mc}">${methodShort(t.method||'Cash')}</span></td>
       <td style="font-size:12px;color:var(--text2)">${t.by||'Owner'}</td>
-      <td style="font-size:12px;color:var(--text2);max-width:160px">${t.notes||'—'}</td>
+      <td style="font-size:12px;color:var(--text2);max-width:120px">${t.notes||'—'}</td>
+      <td style="white-space:nowrap">
+        <button onclick="editTxn(${t.id})" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:#fff;cursor:pointer;margin-right:4px">✏ Edit</button>
+        <button onclick="deleteTxn(${t.id})" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--red-mid);background:var(--red-lt);color:var(--red);cursor:pointer">✕ Del</button>
+      </td>
     </tr>`;
   }).join('');
   document.getElementById('ledger-count').textContent=rows.length;
@@ -1048,8 +1132,8 @@ async function syncAll(){
   if(!GS.on){msg.className='cfm cfm-err';msg.textContent='Not connected. Click Setup Guide.';return;}
   msg.className='cfm';msg.textContent='Syncing…';
   try{
-    const hdrs=['ID','Date','Business','Type','Category','Amount USD','Method','Handled By','Notes'];
-    const rows=TXN.map(t=>[t.id,t.date,t.biz,t.type,t.cat,t.amt,t.method||'Cash',t.by||'Owner',t.notes||'']);
+    const hdrs=['ID','Date','Business','Type','Category','Amount USD','LRD Rate','Amount LRD','Method','Handled By','Notes'];
+    const rows=TXN.map(t=>[t.id,t.date,t.biz,t.type,t.cat,t.amt,t.fx||curFX(),(t.amt*(t.fx||curFX())).toFixed(0),t.method||'Cash',t.by||'Owner',t.notes||'']);
     await gsPost({tab:'Master Log',clear:true,headers:hdrs,rows});
     await gsPost({tab:'FX Rates',clear:true,headers:['Date','Rate LRD/USD','Source'],rows:FX.map(r=>[r.date,r.rate,r.src])});
     await gsPost({tab:'Closed Days',clear:true,headers:['Date','Status'],rows:CLOSED.map(d=>[d,'Closed'])});
@@ -1062,7 +1146,7 @@ async function syncAll(){
 }
 async function syncRow(t){
   if(!GS.on||!GS.url)return;
-  try{await gsPost({tab:'Master Log',rows:[[t.id,t.date,t.biz,t.type,t.cat,t.amt,t.method||'Cash',t.by||'Owner',t.notes||'']]});}catch(e){}
+  try{await gsPost({tab:'Master Log',rows:[[t.id,t.date,t.biz,t.type,t.cat,t.amt,t.fx||curFX(),(t.amt*(t.fx||curFX())).toFixed(0),t.method||'Cash',t.by||'Owner',t.notes||'']]});}catch(e){}
 }
 
 async function loadFromSheets(){
