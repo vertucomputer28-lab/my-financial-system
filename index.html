@@ -47,7 +47,7 @@ textarea{min-height:60px;resize:vertical}
 .btn-green{background:var(--green);color:#fff}.btn-blue{background:var(--blue);color:#fff}
 .btn-outline{background:transparent;border:1px solid var(--border);color:var(--text)}
 .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px}
-.b-inc{background:var(--green-lt);color:var(--green-dk)}.b-exp{background:var(--red-lt);color:var(--red)}.b-draw{background:var(--amber-lt);color:var(--amber-dk)}
+.b-inc{background:var(--green-lt);color:var(--green-dk)}.b-exp{background:var(--red-lt);color:var(--red)}.b-draw{background:var(--amber-lt);color:var(--amber-dk)}.b-fx{background:var(--blue-lt);color:var(--blue-dk)}
 .tbl-wrap{overflow-x:auto;border-radius:0 0 var(--r) var(--r)}
 table{width:100%;border-collapse:collapse;font-size:13px;min-width:480px}
 th{font-size:11px;font-weight:700;color:var(--text2);text-align:left;padding:10px 12px;background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap}
@@ -149,6 +149,7 @@ tr:hover td{background:#fafaf8}
   </div>
 
   <div class="mg mg-4" id="kpi-grid"></div>
+  <div class="mg mg-2" id="cash-balance-grid"></div>
 
   <div class="card">
     <div class="card-title">Alerts</div>
@@ -193,6 +194,7 @@ tr:hover td{background:#fafaf8}
           <option value="Income">Income</option>
           <option value="Expense">Expense</option>
           <option value="Owner Draw">Owner Draw</option>
+          <option value="Currency Exchange">Currency Exchange</option>
         </select>
       </div>
       <div class="fg">
@@ -222,10 +224,23 @@ tr:hover td{background:#fafaf8}
         <label>Notes</label>
         <textarea id="f-notes" placeholder="Brief description — what was this for?"></textarea>
       </div>
-      <div class="fg fg-full">
-        <label>Exchange Rate (LRD per $1 USD) — defaults to today's rate, change if wholesale/market rate differs</label>
-        <input type="number" id="f-fx" step="0.01" min="50" max="1000" placeholder="Auto-filled from current rate">
-        <div style="font-size:11px;color:var(--text2);margin-top:3px">Current rate: <strong id="f-fx-hint"></strong> · Change this if the supplier/market used a different rate</div>
+      <div class="fg">
+        <label>Currency *</label>
+        <select id="f-cur" onchange="onCurChange()">
+          <option value="USD">USD — US Dollar</option>
+          <option value="LRD">LRD — Liberian Dollar</option>
+        </select>
+      </div>
+      <div class="fg" id="f-fx-row" style="display:none">
+        <label>Exchange Rate (LRD per $1 USD) *</label>
+        <input type="number" id="f-fx" step="0.01" min="50" max="1000" placeholder="e.g. 178.50">
+        <div style="font-size:11px;color:var(--text2);margin-top:3px">Current rate: <strong id="f-fx-hint"></strong> · Required when currency is LRD</div>
+      </div>
+      <div class="fg fg-full" id="f-xchg-row" style="display:none">
+        <div style="background:var(--blue-lt);border:1px solid #b5d4f4;border-radius:var(--rs);padding:10px 12px;font-size:13px;color:var(--blue-dk)">
+          <strong>Currency Exchange:</strong> Enter the amount you are giving away. The system will calculate what you receive at the rate above.<br>
+          <span id="f-xchg-preview" style="font-weight:700;margin-top:4px;display:block"></span>
+        </div>
       </div>
     </div>
     <button class="btn btn-primary" onclick="saveEntry()">Save Transaction</button>
@@ -288,11 +303,16 @@ tr:hover td{background:#fafaf8}
       <option value="Mobile">Mobile Money</option>
       <option value="Bank">Bank</option>
     </select>
+    <select id="fil-cur" onchange="renderLedger()" style="flex:1;min-width:90px;font-size:13px;padding:8px 10px">
+      <option value="">All currencies</option>
+      <option value="USD">USD only</option>
+      <option value="LRD">LRD only</option>
+    </select>
   </div>
   <div class="card" style="padding:0;overflow:hidden">
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>Date</th><th>Business</th><th>Type</th><th>Category</th><th>Amount (USD)</th><th>LRD Rate</th><th>Method</th><th>By</th><th>Notes</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Date</th><th>Business</th><th>Type</th><th>Category</th><th>Amount</th><th>USD Equiv.</th><th>Rate</th><th>Method</th><th>By</th><th>Notes</th><th>Actions</th></tr></thead>
         <tbody id="ledger-body"></tbody>
         <tfoot><tr class="tfoot">
           <td colspan="5"><span id="ledger-count">0</span> transactions shown</td>
@@ -307,12 +327,13 @@ tr:hover td{background:#fafaf8}
 <!-- RECONCILE -->
 <div id="tab-reconcile" class="sec">
   <div class="sec-head">Daily Cash Reconciliation</div>
-  <div class="sec-sub">Run every night. Catch problems the same day.</div>
+  <div class="sec-sub">Run every night. Count USD and LRD separately. No FX conversion used.</div>
 
   <div class="card">
     <div class="card-title">Step 1 — Select Date & Business</div>
     <div style="font-size:12px;background:var(--green-lt);color:var(--green-dk);padding:8px 12px;border-radius:var(--rs);margin-bottom:12px">
-      Cash reconciliation uses <strong>Cash transactions only</strong>. Mobile Money and Bank transfers are excluded — they reconcile via their own statements.
+      Cash transactions only — Mobile Money and Bank reconcile via their own statements.<br>
+      <strong>USD and LRD are counted and checked separately. No FX conversion is used in reconciliation.</strong>
     </div>
     <div class="fg-grid">
       <div class="fg"><label>Date</label><input type="date" id="r-date"></div>
@@ -323,38 +344,77 @@ tr:hover td{background:#fafaf8}
         </select>
       </div>
     </div>
-    <button class="btn btn-outline" onclick="calcRecon()" style="margin-top:4px;width:100%;justify-content:center">Calculate System Balance</button>
+    <button class="btn btn-outline" onclick="calcRecon()" style="margin-top:4px;width:100%;justify-content:center">Calculate System Balances</button>
   </div>
 
   <div class="card" id="recon-sys-card" style="display:none">
-    <div class="card-title">Step 2 — System Calculation</div>
-    <div class="pl">
-      <div class="pl-row indent"><span class="pl-label">Opening Cash (you enter below)</span><span class="pl-val" id="r-open-display">—</span></div>
-      <div class="pl-row indent"><span class="pl-label">+ Total Income</span><span class="pl-val" id="r-inc" style="color:var(--green)">$0.00</span></div>
-      <div class="pl-row indent"><span class="pl-label">− Total Expenses</span><span class="pl-val" id="r-exp" style="color:var(--red-mid)">$0.00</span></div>
-      <div class="pl-row indent"><span class="pl-label">− Owner Draw</span><span class="pl-val" id="r-draw" style="color:var(--amber)">$0.00</span></div>
-      <div class="pl-row section-row"><span class="pl-label">Expected Cash</span><span class="pl-val" id="r-expected">—</span></div>
+    <div class="card-title">Step 2 — System Calculated Balances</div>
+
+    <!-- USD section -->
+    <div style="font-size:12px;font-weight:700;color:var(--green-dk);background:var(--green-lt);padding:6px 12px;border-radius:var(--rs);margin-bottom:8px">💵 USD CASH</div>
+    <div class="pl" style="margin-bottom:14px">
+      <div class="pl-row indent"><span class="pl-label">Opening USD (enter below)</span><span class="pl-val" id="r-usd-open-display">—</span></div>
+      <div class="pl-row indent"><span class="pl-label">+ USD Cash Income</span><span class="pl-val" id="r-usd-inc" style="color:var(--green)">$0.00</span></div>
+      <div class="pl-row indent"><span class="pl-label">− USD Cash Expenses</span><span class="pl-val" id="r-usd-exp" style="color:var(--red-mid)">$0.00</span></div>
+      <div class="pl-row indent"><span class="pl-label">− USD Owner Draw</span><span class="pl-val" id="r-usd-draw" style="color:var(--amber)">$0.00</span></div>
+      <div class="pl-row indent"><span class="pl-label">± Currency Exchange (USD side)</span><span class="pl-val" id="r-usd-xchg" style="color:var(--blue)">$0.00</span></div>
+      <div class="pl-row section-row"><span class="pl-label">Expected USD on Hand</span><span class="pl-val" id="r-usd-expected">—</span></div>
     </div>
+
+    <!-- LRD section -->
+    <div style="font-size:12px;font-weight:700;color:var(--blue-dk);background:var(--blue-lt);padding:6px 12px;border-radius:var(--rs);margin-bottom:8px">🏦 LRD CASH</div>
+    <div class="pl" style="margin-bottom:14px">
+      <div class="pl-row indent"><span class="pl-label">Opening LRD (enter below)</span><span class="pl-val" id="r-lrd-open-display">—</span></div>
+      <div class="pl-row indent"><span class="pl-label">+ LRD Cash Income</span><span class="pl-val" id="r-lrd-inc" style="color:var(--green)">LRD 0</span></div>
+      <div class="pl-row indent"><span class="pl-label">− LRD Cash Expenses</span><span class="pl-val" id="r-lrd-exp" style="color:var(--red-mid)">LRD 0</span></div>
+      <div class="pl-row indent"><span class="pl-label">− LRD Owner Draw</span><span class="pl-val" id="r-lrd-draw" style="color:var(--amber)">LRD 0</span></div>
+      <div class="pl-row indent"><span class="pl-label">± Currency Exchange (LRD side)</span><span class="pl-val" id="r-lrd-xchg" style="color:var(--blue)">LRD 0</span></div>
+      <div class="pl-row section-row"><span class="pl-label">Expected LRD on Hand</span><span class="pl-val" id="r-lrd-expected">—</span></div>
+    </div>
+
     <div class="divider"></div>
-    <div class="fg">
-      <label>Opening Cash Balance *</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="number" id="r-open-input" placeholder="Auto-filled from previous close" step="0.01" min="0" oninput="flagOpenOverride()" style="flex:1">
-        <span id="r-open-source" style="font-size:11px;white-space:nowrap;padding:4px 8px;border-radius:var(--rs);background:var(--green-lt);color:var(--green-dk);font-weight:600"></span>
+
+    <!-- Opening balances input -->
+    <div class="fg-grid" style="margin-bottom:8px">
+      <div class="fg">
+        <label>Opening USD Balance *</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="number" id="r-usd-open-input" placeholder="0.00" step="0.01" min="0" oninput="liveExpected()" style="flex:1">
+          <span id="r-usd-open-source" style="font-size:11px;white-space:nowrap;padding:4px 8px;border-radius:var(--rs);background:var(--green-lt);color:var(--green-dk);font-weight:600"></span>
+        </div>
       </div>
-      <div id="r-open-override-warn" style="display:none;font-size:12px;margin-top:4px;color:var(--amber-dk);background:var(--amber-lt);padding:6px 10px;border-radius:var(--rs)">
-        ⚠ Opening cash changed from suggested value. This will be flagged in the reconciliation record.
+      <div class="fg">
+        <label>Opening LRD Balance *</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="number" id="r-lrd-open-input" placeholder="0" step="1" min="0" oninput="liveExpected()" style="flex:1">
+          <span id="r-lrd-open-source" style="font-size:11px;white-space:nowrap;padding:4px 8px;border-radius:var(--rs);background:var(--blue-lt);color:var(--blue-dk);font-weight:600"></span>
+        </div>
       </div>
     </div>
-    <div class="fg" style="margin-top:6px"><label>Actual Physical Cash Count *</label><input type="number" id="r-actual" placeholder="Count your cash and enter here" step="0.01" min="0"></div>
+
+    <!-- Physical count -->
+    <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Physical Count</div>
+    <div class="fg-grid">
+      <div class="fg">
+        <label>Actual USD Counted *</label>
+        <input type="number" id="r-usd-actual" placeholder="Count USD notes + coins" step="0.01" min="0">
+      </div>
+      <div class="fg">
+        <label>Actual LRD Counted *</label>
+        <input type="number" id="r-lrd-actual" placeholder="Count LRD notes" step="1" min="0">
+      </div>
+    </div>
+
+    <!-- Non-cash summary -->
+    <div id="r-noncash-summary" style="display:none;margin-top:8px;font-size:12px;color:var(--blue-dk);background:var(--blue-lt);padding:8px 12px;border-radius:var(--rs)"></div>
+
     <button class="btn btn-primary" onclick="runRecon()">Run Reconciliation Check</button>
   </div>
 
   <div class="card" id="recon-result-card" style="display:none">
     <div class="card-title">Step 3 — Result</div>
-    <div class="pl" id="recon-detail"></div>
-    <div class="recon-status" id="recon-status-box"></div>
-    <div style="font-size:12px;color:var(--text2);margin-top:10px">Acceptable variance: within ±$2 USD. Anything larger must be investigated before the next shift.</div>
+    <div id="recon-detail"></div>
+    <div style="font-size:12px;color:var(--text2);margin-top:10px">Acceptable variance: ±$2 USD · ±LRD 350. Anything larger must be investigated before the next shift.</div>
   </div>
 
   <div class="card">
@@ -495,7 +555,8 @@ function populateByDropdown(selId){
 const CATS={
   Income:{Bar:['Sales'],Restaurant:['Sales'],Hall:['Event Income'],Personal:[]},
   Expense:{Bar:['Cost of Goods','Operating Expenses','Maintenance','Admin'],Restaurant:['Cost of Goods','Operating Expenses','Maintenance','Admin'],Hall:['Cost of Goods','Operating Expenses','Maintenance','Admin'],Personal:[]},
-  'Owner Draw':{Bar:['Owner Draw'],Restaurant:['Owner Draw'],Hall:['Owner Draw'],Personal:['Owner Draw']}
+  'Owner Draw':{Bar:['Owner Draw'],Restaurant:['Owner Draw'],Hall:['Owner Draw'],Personal:['Owner Draw']},
+  'Currency Exchange':{Bar:['USD→LRD','LRD→USD'],Restaurant:['USD→LRD','LRD→USD'],Hall:['USD→LRD','LRD→USD'],Personal:['USD→LRD','LRD→USD']}
 };
 
 // HELPERS
@@ -505,13 +566,47 @@ const curFX=()=>FX.length?FX[FX.length-1].rate:178.5;
 const todayISO=()=>new Date().toISOString().split('T')[0];
 function dlabel(d){const dt=new Date(d+'T00:00:00');return dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});}
 
+// Convert any transaction amount to USD for reporting
+function toUSD(t){
+  if(t.cur==='LRD'){
+    const rate=t.fx||curFX();
+    return t.amt/rate;
+  }
+  return t.amt; // USD or no currency field (legacy)
+}
+
+// Separate cash balances by currency (excludes Currency Exchange — handled separately)
+function calcBalances(txns){
+  const real=txns.filter(t=>t.type!=='Currency Exchange');
+  // USD balance
+  const usdInc=real.filter(t=>t.type==='Income'&&(t.cur==='USD'||!t.cur)).reduce((a,t)=>a+t.amt,0);
+  const usdOut=real.filter(t=>t.type!=='Income'&&(t.cur==='USD'||!t.cur)).reduce((a,t)=>a+t.amt,0);
+  // LRD balance
+  const lrdInc=real.filter(t=>t.type==='Income'&&t.cur==='LRD').reduce((a,t)=>a+t.amt,0);
+  const lrdOut=real.filter(t=>t.type!=='Income'&&t.cur==='LRD').reduce((a,t)=>a+t.amt,0);
+  // Currency Exchange adjustments
+  const xchg=txns.filter(t=>t.type==='Currency Exchange');
+  let usdAdj=0,lrdAdj=0;
+  xchg.forEach(t=>{
+    if(t.cat==='USD→LRD'){usdAdj-=t.amt;lrdAdj+=(t.amt*(t.fx||curFX()));}
+    else if(t.cat==='LRD→USD'){lrdAdj-=t.amt;usdAdj+=(t.amt/(t.fx||curFX()));}
+  });
+  return{
+    usdCash:(usdInc-usdOut)+usdAdj,
+    lrdCash:(lrdInc-lrdOut)+lrdAdj,
+    usdInc,usdOut,lrdInc,lrdOut
+  };
+}
+
 function calcProfit(txns){
-  const inc  =txns.filter(t=>t.type==='Income').reduce((a,t)=>a+t.amt,0);
-  const cog  =txns.filter(t=>t.cat==='Cost of Goods').reduce((a,t)=>a+t.amt,0);
-  const oe   =txns.filter(t=>t.cat==='Operating Expenses').reduce((a,t)=>a+t.amt,0);
-  const maint=txns.filter(t=>t.cat==='Maintenance').reduce((a,t)=>a+t.amt,0);
-  const admin=txns.filter(t=>t.cat==='Admin').reduce((a,t)=>a+t.amt,0);
-  const draw =txns.filter(t=>t.type==='Owner Draw').reduce((a,t)=>a+t.amt,0);
+  // Excludes Currency Exchange from P&L — it's a balance sheet movement
+  const real=txns.filter(t=>t.type!=='Currency Exchange');
+  const inc  =real.filter(t=>t.type==='Income').reduce((a,t)=>a+toUSD(t),0);
+  const cog  =real.filter(t=>t.cat==='Cost of Goods').reduce((a,t)=>a+toUSD(t),0);
+  const oe   =real.filter(t=>t.cat==='Operating Expenses').reduce((a,t)=>a+toUSD(t),0);
+  const maint=real.filter(t=>t.cat==='Maintenance').reduce((a,t)=>a+toUSD(t),0);
+  const admin=real.filter(t=>t.cat==='Admin').reduce((a,t)=>a+toUSD(t),0);
+  const draw =real.filter(t=>t.type==='Owner Draw').reduce((a,t)=>a+toUSD(t),0);
   const gross=inc-cog;
   const opProfit=gross-oe-maint-admin;
   const net=opProfit-draw;
@@ -543,51 +638,92 @@ function go(tab,btn){
 }
 
 // FORM
+function onCurChange(){
+  const cur=document.getElementById('f-cur').value;
+  const type=document.getElementById('f-type').value;
+  const fxRow=document.getElementById('f-fx-row');
+  const xchgRow=document.getElementById('f-xchg-row');
+  // Show FX row when LRD is selected OR when Currency Exchange selected
+  if(cur==='LRD'||type==='Currency Exchange'){
+    fxRow.style.display='';
+    if(!document.getElementById('f-fx').value) document.getElementById('f-fx').value=curFX().toFixed(2);
+  } else {
+    fxRow.style.display='none';
+  }
+  xchgRow.style.display=(type==='Currency Exchange')?'':'none';
+  updateXchgPreview();
+}
+function updateXchgPreview(){
+  const type=document.getElementById('f-type').value;
+  if(type!=='Currency Exchange'){return;}
+  const cat=document.getElementById('f-cat').value;
+  const amt=parseFloat(document.getElementById('f-amt').value)||0;
+  const fx=parseFloat(document.getElementById('f-fx').value)||curFX();
+  const el=document.getElementById('f-xchg-preview');
+  if(!el||!amt||!cat)return;
+  if(cat==='USD→LRD'){el.textContent='Give: '+fmtU(amt)+' → Receive: '+fmtL(amt*fx);}
+  else if(cat==='LRD→USD'){el.textContent='Give: '+fmtL(amt)+' → Receive: '+fmtU(amt/fx);}
+}
 function updateCats(){
   const biz=document.getElementById('f-biz').value;
   const type=document.getElementById('f-type').value;
   const sel=document.getElementById('f-cat');
   const cats=(CATS[type]||{})[biz]||[];
-  if(!cats.length){sel.innerHTML='<option value="">— N/A for this combination —</option>';return;}
-  sel.innerHTML=cats.map(c=>`<option>${c}</option>`).join('');
+  if(!cats.length){sel.innerHTML='<option value="">— N/A for this combination —</option>';}
+  else{sel.innerHTML=cats.map(c=>`<option>${c}</option>`).join('');}
+  // Lock currency for Currency Exchange
+  const curSel=document.getElementById('f-cur');
+  if(type==='Currency Exchange'){
+    curSel.value='USD';curSel.disabled=true;
+  } else {
+    curSel.disabled=false;
+  }
+  onCurChange();
 }
 
-let EDIT_ID=null; // ID of transaction being edited, null = new entry
+let EDIT_ID=null;
 function saveEntry(){
   const date=document.getElementById('f-date').value;
   const biz=document.getElementById('f-biz').value;
   const type=document.getElementById('f-type').value;
   const cat=document.getElementById('f-cat').value;
   const amt=parseFloat(document.getElementById('f-amt').value);
+  const cur=document.getElementById('f-cur').value||'USD';
   const method=document.getElementById('f-method').value;
   const by=document.getElementById('f-by').value||'Owner';
   const notes=document.getElementById('f-notes').value.trim();
   const fxRaw=parseFloat(document.getElementById('f-fx').value);
-  const fx=(!isNaN(fxRaw)&&fxRaw>=50)?fxRaw:curFX();
   const msg=document.getElementById('entry-msg');
+
   if(!date||!biz||!type||!cat||!amt||amt<=0||cat.startsWith('—')){
     msg.className='cfm cfm-err';msg.textContent='Fill in all required fields correctly.';return;
   }
-  const txn={date,biz,type,cat,amt,method,by,notes,fx};
+  // FX required for LRD transactions and Currency Exchange
+  if((cur==='LRD'||type==='Currency Exchange')&&(isNaN(fxRaw)||fxRaw<50)){
+    msg.className='cfm cfm-err';msg.textContent='Exchange rate required for LRD transactions.';return;
+  }
+  const fx=(isNaN(fxRaw)||fxRaw<50)?null:fxRaw;
+
+  const txn={date,biz,type,cat,amt,cur,method,by,notes,fx};
   if(EDIT_ID!==null){
-    // Editing existing transaction
     const idx=TXN.findIndex(t=>t.id===EDIT_ID);
     if(idx>-1){
       if(isDayClosed(TXN[idx].date)&&!confirm('WARNING: This transaction is on a CLOSED day. Editing it will affect the audit record. Proceed?')){return;}
       TXN[idx]=Object.assign({},TXN[idx],txn);
-      msg.className='cfm cfm-ok';msg.textContent='✓ Transaction updated — '+type+' · '+fmtU(amt)+' · Rate: '+fx.toFixed(2)+' LRD';
+      msg.className='cfm cfm-ok';msg.textContent='✓ Updated — '+cur+' '+amt.toFixed(2)+' '+type+(fx?' @ '+fx.toFixed(2)+' LRD/$':'');
     }
     EDIT_ID=null;
     document.querySelector('#tab-log .btn-primary').textContent='Save Transaction';
     document.getElementById('edit-cancel-btn').style.display='none';
   } else {
-    // New transaction
     if(isDayClosed(date)){
       if(!confirm('WARNING: '+dlabel(date)+' has been marked as closed. Adding a transaction to a closed day breaks the audit record.\n\nAre you sure you want to proceed?')){return;}
       msg.className='cfm cfm-err';msg.textContent='⚠ Added to CLOSED day '+dlabel(date)+'. Review reconciliation.';
     } else {
+      const dispAmt=cur==='LRD'?fmtL(amt):fmtU(amt);
+      const dispUSD=(cur==='LRD'&&fx)?'  ≈ '+fmtU(amt/fx):'';
       msg.className='cfm cfm-ok';
-      msg.textContent='Saved — '+type+' · '+cat+' · '+fmtU(amt)+' · Rate: '+fx.toFixed(2)+' LRD · By: '+by;
+      msg.textContent='Saved — '+type+' · '+dispAmt+dispUSD+' · '+biz+' · By: '+by;
       setTimeout(()=>msg.textContent='',4000);
     }
     TXN.push(Object.assign({id:Date.now()},txn));
@@ -597,21 +733,18 @@ function saveEntry(){
   document.getElementById('f-amt').value='';
   document.getElementById('f-notes').value='';
   document.getElementById('f-fx').value='';
-  updateFxHint();
+  onCurChange();
   renderDash();renderDayClose();
 }
 function cancelEdit(){
   EDIT_ID=null;
   document.querySelector('#tab-log .btn-primary').textContent='Save Transaction';
   document.getElementById('edit-cancel-btn').style.display='none';
-  document.getElementById('f-date').value=todayISO();document.getElementById('f-fx').value='';updateFxHint();
-  document.getElementById('f-biz').value='';
-  document.getElementById('f-type').value='';
+  document.getElementById('f-date').value=todayISO();
+  ['f-biz','f-type','f-amt','f-notes','f-fx'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('f-cat').innerHTML='<option value="">— Select type first —</option>';
-  document.getElementById('f-amt').value='';
-  document.getElementById('f-notes').value='';
-  document.getElementById('f-fx').value='';
-  updateFxHint();
+  document.getElementById('f-cur').value='USD';
+  onCurChange();
   document.getElementById('entry-msg').textContent='';
 }
 function editTxn(id){
@@ -625,11 +758,12 @@ function editTxn(id){
   updateCats();
   document.getElementById('f-cat').value=t.cat;
   document.getElementById('f-amt').value=t.amt;
+  document.getElementById('f-cur').value=t.cur||'USD';
   document.getElementById('f-method').value=t.method||'Cash';
   document.getElementById('f-by').value=t.by||'Owner';
   document.getElementById('f-notes').value=t.notes||'';
-  document.getElementById('f-fx').value=t.fx||curFX();
-  updateFxHint();
+  if(t.fx) document.getElementById('f-fx').value=t.fx;
+  onCurChange();
   document.querySelector('#tab-log .btn-primary').textContent='Update Transaction';
   document.getElementById('edit-cancel-btn').style.display='inline-flex';
   document.getElementById('entry-msg').className='cfm a-info';
@@ -640,9 +774,10 @@ function deleteTxn(id){
   const t=TXN.find(x=>x.id===id);
   if(!t)return;
   if(isDayClosed(t.date)){
-    if(!confirm('WARNING: This transaction is on a CLOSED day. Deleting it will affect the audit record.\n\nFor auditing, consider logging a reversal entry instead (same transaction with negative amount).\n\nDelete anyway?'))return;
+    if(!confirm('WARNING: This transaction is on a CLOSED day. Deleting it will affect the audit record.\n\nDelete anyway?'))return;
   } else {
-    if(!confirm('Delete this transaction?\n\n'+dlabel(t.date)+' · '+t.biz+' · '+t.type+' · '+fmtU(t.amt)+'\n\nThis cannot be undone.'))return;
+    const dispAmt=(t.cur==='LRD')?fmtL(t.amt):fmtU(t.amt);
+    if(!confirm('Delete this transaction?\n\n'+dlabel(t.date)+' · '+t.biz+' · '+t.type+' · '+dispAmt+'\n\nThis cannot be undone.'))return;
   }
   TXN=TXN.filter(x=>x.id!==id);
   save();renderLedger();renderDash();
@@ -686,13 +821,25 @@ function renderDash(){
   }).join('');
 
   const todayT=TXN.filter(t=>t.date===todayISO());
-  const todayInc=todayT.filter(t=>t.type==='Income').reduce((a,t)=>a+t.amt,0);
-  const todayExp=todayT.filter(t=>t.type==='Expense').reduce((a,t)=>a+t.amt,0);
+  const todayInc=todayT.filter(t=>t.type==='Income').reduce((a,t)=>a+toUSD(t),0);
+  const todayExp=todayT.filter(t=>t.type==='Expense').reduce((a,t)=>a+toUSD(t),0);
   document.getElementById('kpi-grid').innerHTML=`
-    <div class="m"><div class="m-lbl">Today Income</div><div class="m-val g">${fmtU(todayInc)}</div></div>
-    <div class="m"><div class="m-lbl">Today Expenses</div><div class="m-val r">${fmtU(todayExp)}</div></div>
+    <div class="m"><div class="m-lbl">Today Income (USD equiv.)</div><div class="m-val g">${fmtU(todayInc)}</div></div>
+    <div class="m"><div class="m-lbl">Today Expenses (USD equiv.)</div><div class="m-val r">${fmtU(todayExp)}</div></div>
     <div class="m"><div class="m-lbl">Month Gross Profit</div><div class="m-val ${p.gross>=0?'g':'r'}">${fmtU(p.gross)}</div></div>
     <div class="m"><div class="m-lbl">Owner Draws (Month)</div><div class="m-val a">${fmtU(p.draw)}</div></div>`;
+  const bal=calcBalances(TXN);
+  document.getElementById('cash-balance-grid').innerHTML=`
+    <div class="m" style="border-color:var(--green);border-width:2px">
+      <div class="m-lbl" style="color:var(--green-dk)">💵 USD Cash Balance</div>
+      <div class="m-val ${bal.usdCash>=0?'g':'r'}">${fmtU(bal.usdCash)}</div>
+      <div class="m-sub">In: ${fmtU(bal.usdInc)} · Out: ${fmtU(bal.usdOut)}</div>
+    </div>
+    <div class="m" style="border-color:var(--blue);border-width:2px">
+      <div class="m-lbl" style="color:var(--blue-dk)">🏦 LRD Cash Balance</div>
+      <div class="m-val ${bal.lrdCash>=0?'b':'r'}">${fmtL(bal.lrdCash)}</div>
+      <div class="m-sub">In: ${fmtL(bal.lrdInc)} · Out: ${fmtL(bal.lrdOut)}</div>
+    </div>`;
 
   const alerts=[];
 
@@ -741,16 +888,27 @@ function renderDash(){
     }
   }
 
-  // Cash behaviour alert: cash income high vs cash on hand appears low
-  const cashInc=month.filter(t=>t.type==='Income'&&t.method==='Cash').reduce((a,t)=>a+t.amt,0);
-  const cashOut=month.filter(t=>t.type!=='Income'&&t.method==='Cash').reduce((a,t)=>a+t.amt,0);
-  const cashBalance=cashInc-cashOut;
+  // Per-currency reconciliation mismatch alerts
   const lastRecon=RECON.length?RECON[RECON.length-1]:null;
-  if(cashInc>0&&lastRecon&&lastRecon.actual<cashBalance*0.5){
-    alerts.push({c:'a-bad',m:'Cash alert: Income is '+fmtU(cashInc)+' but last reconciled cash was only '+fmtU(lastRecon.actual)+'. Cash may be unaccounted for.'});
+  if(lastRecon){
+    if(!lastRecon.usdOK&&lastRecon.usdDiff!==undefined){
+      alerts.push({c:'a-bad',m:'⚠ USD Cash Mismatch on '+dlabel(lastRecon.date)+': Difference of '+fmtU(Math.abs(lastRecon.usdDiff))+'. Investigate before next shift.'});
+    }
+    if(!lastRecon.lrdOK&&lastRecon.lrdDiff!==undefined){
+      alerts.push({c:'a-bad',m:'⚠ LRD Cash Mismatch on '+dlabel(lastRecon.date)+': Difference of '+fmtL(Math.abs(lastRecon.lrdDiff))+'. Investigate before next shift.'});
+    }
+    if(lastRecon.ok){
+      const daysSince=Math.floor((new Date()-new Date(lastRecon.date+'T00:00:00'))/(1000*60*60*24));
+      if(daysSince>1) alerts.push({c:'a-warn',m:'Last reconciliation was '+daysSince+' days ago ('+dlabel(lastRecon.date)+'). Run daily for accuracy.'});
+    }
   }
-  if(cashInc>200&&cashBalance<cashInc*0.2){
-    alerts.push({c:'a-bad',m:'Cash behaviour: High income ('+fmtU(cashInc)+') but cash balance is low ('+fmtU(Math.max(cashBalance,0))+'). Review cash flow or check for missing expenses/draws.'});
+  // Cash flow check per currency
+  const cashIncUSD=month.filter(t=>t.type==='Income'&&t.method==='Cash'&&(t.cur||'USD')==='USD').reduce((a,t)=>a+t.amt,0);
+  const cashIncLRD=month.filter(t=>t.type==='Income'&&t.method==='Cash'&&t.cur==='LRD').reduce((a,t)=>a+t.amt,0);
+  const cashOutUSD=month.filter(t=>t.type!=='Income'&&t.method==='Cash'&&(t.cur||'USD')==='USD'&&t.type!=='Currency Exchange').reduce((a,t)=>a+t.amt,0);
+  const cashOutLRD=month.filter(t=>t.type!=='Income'&&t.method==='Cash'&&t.cur==='LRD'&&t.type!=='Currency Exchange').reduce((a,t)=>a+t.amt,0);
+  if(cashIncUSD>200&&(cashIncUSD-cashOutUSD)<cashIncUSD*0.1){
+    alerts.push({c:'a-warn',m:'USD cash flow: High income ('+fmtU(cashIncUSD)+') but low net balance. Review draws and expenses.'});
   }
 
   if(!alerts.length)alerts.push({c:'a-ok',m:'All checks passed — no alerts'});
@@ -780,6 +938,8 @@ function renderLedger(){
     else if(method==='Mobile')rows=rows.filter(t=>t.method&&t.method.toLowerCase().includes('mobile'));
     else if(method==='Bank')rows=rows.filter(t=>t.method&&t.method.toLowerCase().includes('bank'));
   }
+  const filCur=document.getElementById('fil-cur').value;
+  if(filCur)rows=rows.filter(t=>(t.cur||'USD')===filCur);
   const empty=document.getElementById('ledger-empty');
   const body=document.getElementById('ledger-body');
   if(!rows.length){empty.style.display='block';body.innerHTML='';document.getElementById('ledger-count').textContent=0;document.getElementById('ledger-total').textContent='$0.00';return;}
@@ -788,18 +948,24 @@ function renderLedger(){
   body.innerHTML=rows.map(t=>{
     const locked=isDayClosed(t.date);
     const mc=methodClass(t.method);
-    const rate=t.fx?t.fx.toFixed(2):'—';
-    const lrdAmt=t.fx?(t.amt*t.fx):null;
+    const bc2={Income:'b-inc',Expense:'b-exp','Owner Draw':'b-draw','Currency Exchange':'b-fx'};
+    const cur=t.cur||'USD';
+    const dispAmt=cur==='LRD'?fmtL(t.amt):(fmtU(t.amt));
+    const usdVal=cur==='LRD'?(t.fx?fmtU(t.amt/t.fx):'—'):fmtU(t.amt);
+    const rateDisp=t.fx?t.fx.toFixed(2)+' LRD/$':'—';
+    const curBadge=cur==='LRD'?'<span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--blue-lt);color:var(--blue-dk)">LRD</span>':'<span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--green-lt);color:var(--green-dk)">USD</span>';
+    const amtColor=t.type==='Income'?'var(--green)':t.type==='Owner Draw'?'var(--amber)':t.type==='Currency Exchange'?'var(--blue)':'var(--red-mid)';
     return `<tr${locked?' class="day-locked"':''}>
       <td style="white-space:nowrap;font-size:12px">${dlabel(t.date)}${locked?'<span class="lock-badge">CLOSED</span>':''}</td>
       <td><span class="pill">${t.biz}</span></td>
-      <td><span class="badge ${bc[t.type]||''}">${t.type}</span></td>
+      <td><span class="badge ${bc2[t.type]||''}">${t.type}</span></td>
       <td style="font-size:12px;color:var(--text2)">${t.cat}</td>
-      <td style="font-weight:700;color:${t.type==='Income'?'var(--green)':t.type==='Owner Draw'?'var(--amber)':'var(--red-mid)'}">${fmtU(t.amt)}${lrdAmt?'<div style="font-size:10px;color:var(--text3);font-weight:400">LRD '+Math.round(lrdAmt).toLocaleString()+'</div>':''}</td>
-      <td style="font-size:12px;color:var(--text2)">${rate==='—'?'—':rate+' LRD/$'}</td>
+      <td style="font-weight:700;color:${amtColor}">${curBadge} ${dispAmt}</td>
+      <td style="font-size:12px;color:var(--text2)">${cur==='LRD'?usdVal:'—'}</td>
+      <td style="font-size:12px;color:var(--text2)">${cur==='LRD'||t.type==='Currency Exchange'?rateDisp:'—'}</td>
       <td><span class="method-pill ${mc}">${methodShort(t.method||'Cash')}</span></td>
       <td style="font-size:12px;color:var(--text2)">${t.by||'Owner'}</td>
-      <td style="font-size:12px;color:var(--text2);max-width:120px">${t.notes||'—'}</td>
+      <td style="font-size:12px;color:var(--text2);max-width:100px">${t.notes||'—'}</td>
       <td style="white-space:nowrap">
         <button onclick="editTxn(${t.id})" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--border);background:#fff;cursor:pointer;margin-right:4px">✏ Edit</button>
         <button onclick="deleteTxn(${t.id})" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--red-mid);background:var(--red-lt);color:var(--red);cursor:pointer">✕ Del</button>
@@ -835,114 +1001,248 @@ function renderFX(){
 
 // RECONCILE
 let _reconData={};
-function getAutoOpeningCash(date,biz){
-  // Find the most recent reconciliation before this date for the same business scope
+
+// Pure physical balance per currency — strictly no FX conversion
+function calcPhysicalBalances(date, biz){
+  // Cash-only transactions for this date/biz
+  const txns=TXN.filter(t=>
+    t.date===date &&
+    (biz==='All'||t.biz===biz) &&
+    (!t.method||t.method==='Cash')
+  );
+
+  // USD: all USD-denominated cash transactions
+  const usdTxns=txns.filter(t=>(t.cur||'USD')==='USD'&&t.type!=='Currency Exchange');
+  const usdInc =usdTxns.filter(t=>t.type==='Income').reduce((a,t)=>a+t.amt,0);
+  const usdExp =usdTxns.filter(t=>t.type==='Expense').reduce((a,t)=>a+t.amt,0);
+  const usdDraw=usdTxns.filter(t=>t.type==='Owner Draw').reduce((a,t)=>a+t.amt,0);
+
+  // LRD: all LRD-denominated cash transactions
+  const lrdTxns=txns.filter(t=>t.cur==='LRD'&&t.type!=='Currency Exchange');
+  const lrdInc =lrdTxns.filter(t=>t.type==='Income').reduce((a,t)=>a+t.amt,0);
+  const lrdExp =lrdTxns.filter(t=>t.type==='Expense').reduce((a,t)=>a+t.amt,0);
+  const lrdDraw=lrdTxns.filter(t=>t.type==='Owner Draw').reduce((a,t)=>a+t.amt,0);
+
+  // Currency Exchange — affects both sides PHYSICALLY (no FX calculation, use recorded amounts)
+  const xchg=txns.filter(t=>t.type==='Currency Exchange');
+  let usdXchg=0, lrdXchg=0;
+  xchg.forEach(t=>{
+    if(t.cat==='USD→LRD'){
+      // Gave USD, received LRD
+      usdXchg -= t.amt;                              // USD decreases by recorded USD amount
+      lrdXchg += (t.amt * (t.fx||0));               // LRD increases by recorded LRD amount
+    } else if(t.cat==='LRD→USD'){
+      // Gave LRD, received USD
+      lrdXchg -= t.amt;                              // LRD decreases by recorded LRD amount
+      usdXchg += (t.amt / (t.fx||1));               // USD increases by recorded USD amount
+    }
+  });
+
+  // Non-cash totals (for reference display only)
+  const allTxns=TXN.filter(t=>t.date===date&&(biz==='All'||t.biz===biz));
+  const mmUSD=allTxns.filter(t=>t.method&&t.method.toLowerCase().includes('mobile')&&(t.cur||'USD')==='USD').reduce((a,t)=>a+t.amt,0);
+  const mmLRD=allTxns.filter(t=>t.method&&t.method.toLowerCase().includes('mobile')&&t.cur==='LRD').reduce((a,t)=>a+t.amt,0);
+  const bankUSD=allTxns.filter(t=>t.method&&t.method.toLowerCase().includes('bank')&&(t.cur||'USD')==='USD').reduce((a,t)=>a+t.amt,0);
+  const bankLRD=allTxns.filter(t=>t.method&&t.method.toLowerCase().includes('bank')&&t.cur==='LRD').reduce((a,t)=>a+t.amt,0);
+
+  return{usdInc,usdExp,usdDraw,usdXchg,lrdInc,lrdExp,lrdDraw,lrdXchg,mmUSD,mmLRD,bankUSD,bankLRD};
+}
+
+function getAutoOpening(date,biz){
+  // Find most recent reconciliation before this date
   const prior=[...RECON]
     .filter(r=>r.date<date&&(biz==='All'?true:r.biz===biz||r.biz==='All'))
     .sort((a,b)=>b.date.localeCompare(a.date));
-  if(prior.length){return{val:prior[0].actual,source:'Auto — from '+dlabel(prior[0].date)+' close'};}
-  return{val:null,source:'No prior close found — enter manually'};
-}
-function flagOpenOverride(){
-  const cur=parseFloat(document.getElementById('r-open-input').value);
-  const warn=document.getElementById('r-open-override-warn');
-  const src=document.getElementById('r-open-source');
-  if(!isNaN(_reconData._suggestedOpen)&&Math.abs(cur-_reconData._suggestedOpen)>0.01){
-    warn.style.display='block';
-    src.textContent='OVERRIDDEN';
-    src.style.background='var(--amber-lt)';src.style.color='var(--amber-dk)';
-    _reconData._openOverridden=true;
-  } else {
-    warn.style.display='none';
-    src.textContent=_reconData._openSource||'';
-    src.style.background='var(--green-lt)';src.style.color='var(--green-dk)';
-    _reconData._openOverridden=false;
+  if(prior.length){
+    return{
+      usd:prior[0].usdActual,
+      lrd:prior[0].lrdActual,
+      source:'Auto — from '+dlabel(prior[0].date)
+    };
   }
-  liveExpected();
+  return{usd:null,lrd:null,source:'No prior close — enter manually'};
 }
+
 function calcRecon(){
   const d=document.getElementById('r-date').value;
   const biz=document.getElementById('r-biz').value;
-  // Cash only — Mobile Money and Bank settle via their own statements
-  const txns=TXN.filter(t=>t.date===d&&(biz==='All'||t.biz===biz)&&(!t.method||t.method==='Cash'));
-  const inc=txns.filter(t=>t.type==='Income').reduce((a,t)=>a+t.amt,0);
-  const exp=txns.filter(t=>t.type==='Expense').reduce((a,t)=>a+t.amt,0);
-  const draw=txns.filter(t=>t.type==='Owner Draw').reduce((a,t)=>a+t.amt,0);
-  const allTxns=TXN.filter(t=>t.date===d&&(biz==='All'||t.biz===biz));
-  const mmAmt=allTxns.filter(t=>t.method&&t.method.toLowerCase().includes('mobile')).reduce((a,t)=>a+t.amt,0);
-  const bankAmt=allTxns.filter(t=>t.method&&t.method.toLowerCase().includes('bank')).reduce((a,t)=>a+t.amt,0);
-  document.getElementById('r-inc').textContent=fmtU(inc);
-  document.getElementById('r-exp').textContent=fmtU(exp);
-  document.getElementById('r-draw').textContent=fmtU(draw);
-  // Auto-carry opening cash
-  const auto=getAutoOpeningCash(d,biz);
-  const openInput=document.getElementById('r-open-input');
-  const srcBadge=document.getElementById('r-open-source');
-  const overrideWarn=document.getElementById('r-open-override-warn');
-  if(auto.val!==null){
-    openInput.value=auto.val.toFixed(2);
-    srcBadge.textContent='Auto-carried';
-    srcBadge.style.background='var(--green-lt)';srcBadge.style.color='var(--green-dk)';
+  if(!d){alert('Select a date first.');return;}
+
+  const bal=calcPhysicalBalances(d,biz);
+  _reconData={...bal,d,biz};
+
+  // Update USD display
+  document.getElementById('r-usd-inc').textContent=fmtU(bal.usdInc);
+  document.getElementById('r-usd-exp').textContent=fmtU(bal.usdExp);
+  document.getElementById('r-usd-draw').textContent=fmtU(bal.usdDraw);
+  document.getElementById('r-usd-xchg').textContent=(bal.usdXchg>=0?'+':'')+fmtU(bal.usdXchg);
+
+  // Update LRD display
+  document.getElementById('r-lrd-inc').textContent=fmtL(bal.lrdInc);
+  document.getElementById('r-lrd-exp').textContent=fmtL(bal.lrdExp);
+  document.getElementById('r-lrd-draw').textContent=fmtL(bal.lrdDraw);
+  document.getElementById('r-lrd-xchg').textContent=(bal.lrdXchg>=0?'+':'')+fmtL(bal.lrdXchg);
+
+  // Auto-fill opening balances
+  const auto=getAutoOpening(d,biz);
+  const usdOpenEl=document.getElementById('r-usd-open-input');
+  const lrdOpenEl=document.getElementById('r-lrd-open-input');
+  const usdSrc=document.getElementById('r-usd-open-source');
+  const lrdSrc=document.getElementById('r-lrd-open-source');
+
+  if(auto.usd!==null){
+    usdOpenEl.value=auto.usd.toFixed(2);
+    usdSrc.textContent='Auto-carried';
   } else {
-    openInput.value='';
-    openInput.placeholder='No prior close — enter manually';
-    srcBadge.textContent='Enter manually';
-    srcBadge.style.background='var(--amber-lt)';srcBadge.style.color='var(--amber-dk)';
+    usdOpenEl.value='';usdOpenEl.placeholder='Enter manually';
+    usdSrc.textContent='Manual';usdSrc.style.background='var(--amber-lt)';usdSrc.style.color='var(--amber-dk)';
   }
-  overrideWarn.style.display='none';
-  _reconData={inc,exp,draw,d,biz,mmAmt,bankAmt,_suggestedOpen:auto.val,_openSource:'Auto-carried',_openOverridden:false};
+  if(auto.lrd!==null){
+    lrdOpenEl.value=Math.round(auto.lrd);
+    lrdSrc.textContent='Auto-carried';
+  } else {
+    lrdOpenEl.value='';lrdOpenEl.placeholder='Enter manually';
+    lrdSrc.textContent='Manual';lrdSrc.style.background='var(--amber-lt)';lrdSrc.style.color='var(--amber-dk)';
+  }
+  _reconData._autoUSD=auto.usd;_reconData._autoLRD=auto.lrd;
+
+  // Non-cash reference
+  const nc=document.getElementById('r-noncash-summary');
+  if(bal.mmUSD||bal.mmLRD||bal.bankUSD||bal.bankLRD){
+    nc.style.display='block';
+    nc.innerHTML='<strong>Non-cash (reconcile via statements):</strong> '
+      +(bal.mmUSD?'Mobile Money USD: '+fmtU(bal.mmUSD)+' · ':'')
+      +(bal.mmLRD?'Mobile Money LRD: '+fmtL(bal.mmLRD)+' · ':'')
+      +(bal.bankUSD?'Bank USD: '+fmtU(bal.bankUSD)+' · ':'')
+      +(bal.bankLRD?'Bank LRD: '+fmtL(bal.bankLRD):'');
+  } else {nc.style.display='none';}
+
   document.getElementById('recon-sys-card').style.display='block';
   document.getElementById('recon-result-card').style.display='none';
   liveExpected();
 }
+
 function liveExpected(){
-  const open=parseFloat(document.getElementById('r-open-input').value)||0;
-  const {inc,exp,draw}=_reconData;
-  const expected=open+inc-exp-draw;
-  document.getElementById('r-open-display').textContent=fmtU(open);
-  document.getElementById('r-expected').textContent=fmtU(expected);
+  const {usdInc,usdExp,usdDraw,usdXchg,lrdInc,lrdExp,lrdDraw,lrdXchg}=_reconData;
+  const usdOpen=parseFloat(document.getElementById('r-usd-open-input').value)||0;
+  const lrdOpen=parseFloat(document.getElementById('r-lrd-open-input').value)||0;
+  const usdExp_=usdOpen+usdInc-usdExp-usdDraw+usdXchg;
+  const lrdExp_=lrdOpen+lrdInc-lrdExp-lrdDraw+lrdXchg;
+  document.getElementById('r-usd-open-display').textContent=fmtU(usdOpen);
+  document.getElementById('r-lrd-open-display').textContent=fmtL(lrdOpen);
+  document.getElementById('r-usd-expected').textContent=fmtU(usdExp_);
+  document.getElementById('r-lrd-expected').textContent=fmtL(lrdExp_);
+  _reconData._usdExpected=usdExp_;
+  _reconData._lrdExpected=lrdExp_;
 }
+
 function runRecon(){
-  const openVal=parseFloat(document.getElementById('r-open-input').value)||0;
-  const actVal=parseFloat(document.getElementById('r-actual').value);
-  if(isNaN(actVal)){alert('Enter the actual physical cash count.');return;}
-  const{inc,exp,draw,d,biz,mmAmt,bankAmt}=_reconData;
-  const expected=openVal+inc-exp-draw;
-  const diff=actVal-expected;
-  const ok=Math.abs(diff)<=2;
+  const usdActual=parseFloat(document.getElementById('r-usd-actual').value);
+  const lrdActual=parseFloat(document.getElementById('r-lrd-actual').value);
+  if(isNaN(usdActual)||isNaN(lrdActual)){
+    alert('Enter both USD and LRD physical cash counts.');return;
+  }
+  const usdOpen=parseFloat(document.getElementById('r-usd-open-input').value)||0;
+  const lrdOpen=parseFloat(document.getElementById('r-lrd-open-input').value)||0;
+  liveExpected();
+  const{_usdExpected,_lrdExpected,d,biz,mmUSD,mmLRD,bankUSD,bankLRD,usdInc,usdExp,usdDraw,usdXchg,lrdInc,lrdExp,lrdDraw,lrdXchg}=_reconData;
+  const usdDiff=usdActual-_usdExpected;
+  const lrdDiff=lrdActual-_lrdExpected;
+  const usdOK=Math.abs(usdDiff)<=2;
+  const lrdOK=Math.abs(lrdDiff)<=350;
+  const allOK=usdOK&&lrdOK;
+
+  function diffRow(label,expected,actual,diff,ok,fmt){
+    const color=ok?'var(--green)':'var(--red-mid)';
+    return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;padding:9px 14px;border-bottom:1px solid #f0eeea;font-size:13px;align-items:center">
+      <span style="font-weight:600">${label}</span>
+      <span style="color:var(--text2)">${fmt(expected)}</span>
+      <span style="color:var(--text2)">${fmt(actual)}</span>
+      <span style="font-weight:700;font-size:15px;color:${color}">${diff>=0?'+':''}${fmt(Math.abs(diff))} ${ok?'✓':'⚠'}</span>
+    </div>`;
+  }
+
   document.getElementById('recon-detail').innerHTML=`
-    <div class="pl-row section-row"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Cash Transactions Only</span><span class="pl-val" style="font-size:11px"></span></div>
-    <div class="pl-row indent"><span>Opening Cash${_reconData._openOverridden?' <span style="font-size:10px;color:var(--amber-dk);background:var(--amber-lt);padding:1px 6px;border-radius:3px;font-weight:700">OVERRIDDEN</span>':' <span style="font-size:10px;color:var(--green-dk);background:var(--green-lt);padding:1px 6px;border-radius:3px;font-weight:700">AUTO-CARRIED</span>'}</span><span class="pl-val">${fmtU(openVal)}</span></div>
-    <div class="pl-row indent"><span>+ Cash Income</span><span class="pl-val" style="color:var(--green)">${fmtU(inc)}</span></div>
-    <div class="pl-row indent"><span>− Cash Expenses</span><span class="pl-val" style="color:var(--red-mid)">${fmtU(exp)}</span></div>
-    <div class="pl-row indent"><span>− Owner Draw (Cash)</span><span class="pl-val" style="color:var(--amber)">${fmtU(draw)}</span></div>
-    <div class="pl-row section-row"><span>Expected Cash on Hand</span><span class="pl-val">${fmtU(expected)}</span></div>
-    <div class="pl-row"><span>Actual Cash (counted)</span><span class="pl-val">${fmtU(actVal)}</span></div>
-    <div class="pl-row"><span><strong>Difference</strong></span><span class="pl-val" style="font-size:16px;color:${ok?'var(--green)':'var(--red-mid)'}">${diff>=0?'+':''}${fmtU(diff)}</span></div>
-    ${mmAmt>0||bankAmt>0?`<div class="pl-row section-row" style="margin-top:6px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Non-Cash (reconcile separately)</span><span></span></div>`:''}
-    ${mmAmt>0?`<div class="pl-row indent"><span>Mobile Money total</span><span class="pl-val" style="color:var(--blue)">${fmtU(mmAmt)}</span></div>`:''}
-    ${bankAmt>0?`<div class="pl-row indent"><span>Bank Transfer total</span><span class="pl-val" style="color:var(--blue)">${fmtU(bankAmt)}</span></div>`:''}`;
-  const sb=document.getElementById('recon-status-box');
-  sb.className='recon-status '+(ok?'recon-ok':'recon-bad');
-  sb.textContent=ok?'✓ OK — Cash Reconciliation Passed':'⚠ MISMATCH — Investigate Immediately';
+    <!-- USD block -->
+    <div style="font-size:12px;font-weight:700;color:var(--green-dk);background:var(--green-lt);padding:6px 12px;border-radius:var(--rs);margin-bottom:4px">💵 USD CASH</div>
+    <div class="pl" style="margin-bottom:10px">
+      <div class="pl-row indent"><span>Opening USD</span><span class="pl-val">${fmtU(usdOpen)}</span></div>
+      <div class="pl-row indent"><span>+ Income</span><span class="pl-val" style="color:var(--green)">${fmtU(usdInc)}</span></div>
+      <div class="pl-row indent"><span>− Expenses</span><span class="pl-val" style="color:var(--red-mid)">${fmtU(usdExp)}</span></div>
+      <div class="pl-row indent"><span>− Owner Draw</span><span class="pl-val" style="color:var(--amber)">${fmtU(usdDraw)}</span></div>
+      ${usdXchg!==0?`<div class="pl-row indent"><span>± Currency Exchange</span><span class="pl-val" style="color:var(--blue)">${usdXchg>=0?'+':''}${fmtU(usdXchg)}</span></div>`:''}
+      <div class="pl-row section-row"><span>Expected USD</span><span class="pl-val">${fmtU(_usdExpected)}</span></div>
+      <div class="pl-row"><span>Actual USD Counted</span><span class="pl-val">${fmtU(usdActual)}</span></div>
+      <div class="pl-row"><span><strong>USD Difference</strong></span><span class="pl-val" style="font-size:16px;color:${usdOK?'var(--green)':'var(--red-mid)'}">${usdDiff>=0?'+':''}${fmtU(Math.abs(usdDiff))} ${usdOK?'✓':'⚠'}</span></div>
+    </div>
+
+    <!-- LRD block -->
+    <div style="font-size:12px;font-weight:700;color:var(--blue-dk);background:var(--blue-lt);padding:6px 12px;border-radius:var(--rs);margin-bottom:4px">🏦 LRD CASH</div>
+    <div class="pl" style="margin-bottom:10px">
+      <div class="pl-row indent"><span>Opening LRD</span><span class="pl-val">${fmtL(lrdOpen)}</span></div>
+      <div class="pl-row indent"><span>+ Income</span><span class="pl-val" style="color:var(--green)">${fmtL(lrdInc)}</span></div>
+      <div class="pl-row indent"><span>− Expenses</span><span class="pl-val" style="color:var(--red-mid)">${fmtL(lrdExp)}</span></div>
+      <div class="pl-row indent"><span>− Owner Draw</span><span class="pl-val" style="color:var(--amber)">${fmtL(lrdDraw)}</span></div>
+      ${lrdXchg!==0?`<div class="pl-row indent"><span>± Currency Exchange</span><span class="pl-val" style="color:var(--blue)">${lrdXchg>=0?'+':''}${fmtL(lrdXchg)}</span></div>`:''}
+      <div class="pl-row section-row"><span>Expected LRD</span><span class="pl-val">${fmtL(_lrdExpected)}</span></div>
+      <div class="pl-row"><span>Actual LRD Counted</span><span class="pl-val">${fmtL(lrdActual)}</span></div>
+      <div class="pl-row"><span><strong>LRD Difference</strong></span><span class="pl-val" style="font-size:16px;color:${lrdOK?'var(--green)':'var(--red-mid)'}">${lrdDiff>=0?'+':''}${fmtL(Math.abs(lrdDiff))} ${lrdOK?'✓':'⚠'}</span></div>
+    </div>
+
+    ${(mmUSD||mmLRD||bankUSD||bankLRD)?`
+    <div style="font-size:12px;color:var(--blue-dk);background:var(--blue-lt);padding:8px 12px;border-radius:var(--rs);margin-top:6px">
+      <strong>Non-cash (reconcile separately):</strong><br>
+      ${mmUSD?'Mobile Money USD: '+fmtU(mmUSD)+'<br>':''}
+      ${mmLRD?'Mobile Money LRD: '+fmtL(mmLRD)+'<br>':''}
+      ${bankUSD?'Bank USD: '+fmtU(bankUSD)+'<br>':''}
+      ${bankLRD?'Bank LRD: '+fmtL(bankLRD)+'<br>':''}
+    </div>`:''}
+
+    <div class="recon-status ${allOK?'recon-ok':'recon-bad'}" style="margin-top:12px">
+      ${allOK?'✓ ALL OK — USD & LRD Reconciled':(!usdOK&&!lrdOK)?'⚠ BOTH USD & LRD MISMATCH — Investigate':!usdOK?'⚠ USD MISMATCH — LRD OK':'⚠ LRD MISMATCH — USD OK'}
+    </div>`;
+
   document.getElementById('recon-result-card').style.display='block';
-  RECON.push({date:d,biz,opening:openVal,openOverridden:_reconData._openOverridden||false,suggestedOpen:_reconData._suggestedOpen,inc,exp,draw,expected,actual:actVal,diff,ok,mmAmt,bankAmt,ts:new Date().toISOString()});
+
+  // Save to history
+  RECON.push({
+    date:d,biz,
+    usdOpening:usdOpen,lrdOpening:lrdOpen,
+    usdExpected:_usdExpected,lrdExpected:_lrdExpected,
+    usdActual,lrdActual,
+    usdDiff,lrdDiff,
+    usdOK,lrdOK,ok:allOK,
+    mmUSD,mmLRD,bankUSD,bankLRD,
+    ts:new Date().toISOString()
+  });
   save();renderRecon();
 }
+
 function renderRecon(){
   const h=document.getElementById('recon-history');
   if(!RECON.length){h.innerHTML='<div class="empty">No reconciliations yet.</div>';return;}
-  h.innerHTML='<div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Business</th><th>Opening</th><th>Expected</th><th>Actual</th><th>Diff</th><th>Opening Source</th><th>Status</th></tr></thead><tbody>'+
-    [...RECON].reverse().slice(0,10).map(r=>`<tr>
-      <td>${dlabel(r.date)}</td><td>${r.biz}</td>
-      <td>${fmtU(r.opening)}</td>
-      <td>${fmtU(r.expected)}</td><td>${fmtU(r.actual)}</td>
-      <td style="font-weight:600;color:${r.ok?'var(--green)':'var(--red-mid)'}">${r.diff>=0?'+':''}${fmtU(r.diff)}</td>
-      <td>${r.openOverridden?'<span style="font-size:11px;color:var(--amber-dk);background:var(--amber-lt);padding:2px 6px;border-radius:3px;font-weight:700">OVERRIDDEN</span>':'<span style="font-size:11px;color:var(--green-dk);background:var(--green-lt);padding:2px 6px;border-radius:3px;font-weight:700">Auto-carried</span>'}</td>
-      <td><span class="badge ${r.ok?'b-inc':'b-exp'}">${r.ok?'OK':'MISMATCH'}</span></td>
-    </tr>`).join('')+
-  '</tbody></table></div>';
+  h.innerHTML='<div class="tbl-wrap"><table><thead><tr>'
+    +'<th>Date</th><th>Business</th>'
+    +'<th>USD Expected</th><th>USD Actual</th><th>USD Diff</th>'
+    +'<th>LRD Expected</th><th>LRD Actual</th><th>LRD Diff</th>'
+    +'<th>Status</th>'
+    +'</tr></thead><tbody>'
+    +[...RECON].reverse().slice(0,10).map(r=>`<tr>
+      <td style="white-space:nowrap">${dlabel(r.date)}</td>
+      <td>${r.biz}</td>
+      <td>${fmtU(r.usdExpected||0)}</td>
+      <td>${fmtU(r.usdActual||0)}</td>
+      <td style="font-weight:600;color:${r.usdOK?'var(--green)':'var(--red-mid)'}">${(r.usdDiff||0)>=0?'+':''}${fmtU(Math.abs(r.usdDiff||0))} ${r.usdOK?'✓':'⚠'}</td>
+      <td>${fmtL(r.lrdExpected||0)}</td>
+      <td>${fmtL(r.lrdActual||0)}</td>
+      <td style="font-weight:600;color:${r.lrdOK?'var(--green)':'var(--red-mid)'}">${(r.lrdDiff||0)>=0?'+':''}${fmtL(Math.abs(r.lrdDiff||0))} ${r.lrdOK?'✓':'⚠'}</td>
+      <td><span class="badge ${r.ok?'b-inc':r.usdOK||r.lrdOK?'b-draw':'b-exp'}">${r.ok?'OK':!r.usdOK&&!r.lrdOK?'BOTH MISMATCH':!r.usdOK?'USD MISMATCH':'LRD MISMATCH'}</span></td>
+    </tr>`).join('')
+    +'</tbody></table></div>';
 }
+
+// Compatibility: flagOpenOverride no longer needed but kept to avoid errors
+function flagOpenOverride(){}
 
 // REPORTS
 function buildReport(){
@@ -959,7 +1259,7 @@ function buildReport(){
   const BIZES=['Bar','Restaurant','Hall'];
   const bizRows=BIZES.map(b=>{if(biz!=='all'&&b!==biz)return null;return{b,...calcProfit(txns.filter(t=>t.biz===b))};}).filter(Boolean);
   const expCats=['Cost of Goods','Operating Expenses','Maintenance','Admin'];
-  const expRows=expCats.map(c=>({c,amt:txns.filter(t=>t.cat===c).reduce((a,t)=>a+t.amt,0)}));
+  const expRows=expCats.map(c=>({c,amt:txns.filter(t=>t.cat===c).reduce((a,t)=>a+toUSD(t),0)}));
   const totalExp=p.cog+p.oe+p.maint+p.admin;
   const draws=txns.filter(t=>t.type==='Owner Draw');
 
@@ -1132,8 +1432,8 @@ async function syncAll(){
   if(!GS.on){msg.className='cfm cfm-err';msg.textContent='Not connected. Click Setup Guide.';return;}
   msg.className='cfm';msg.textContent='Syncing…';
   try{
-    const hdrs=['ID','Date','Business','Type','Category','Amount USD','LRD Rate','Amount LRD','Method','Handled By','Notes'];
-    const rows=TXN.map(t=>[t.id,t.date,t.biz,t.type,t.cat,t.amt,t.fx||curFX(),(t.amt*(t.fx||curFX())).toFixed(0),t.method||'Cash',t.by||'Owner',t.notes||'']);
+    const hdrs=['ID','Date','Business','Type','Category','Currency','Amount','FX Rate','USD Equivalent','Method','Handled By','Notes'];
+    const rows=TXN.map(t=>[t.id,t.date,t.biz,t.type,t.cat,t.cur||'USD',t.amt,t.fx||'',t.cur==='LRD'&&t.fx?(t.amt/t.fx).toFixed(2):t.cur!=='LRD'?t.amt.toFixed(2):'',t.method||'Cash',t.by||'Owner',t.notes||'']);
     await gsPost({tab:'Master Log',clear:true,headers:hdrs,rows});
     await gsPost({tab:'FX Rates',clear:true,headers:['Date','Rate LRD/USD','Source'],rows:FX.map(r=>[r.date,r.rate,r.src])});
     await gsPost({tab:'Closed Days',clear:true,headers:['Date','Status'],rows:CLOSED.map(d=>[d,'Closed'])});
@@ -1167,10 +1467,12 @@ async function loadFromSheets(){
         biz:String(r[2]||''),
         type:String(r[3]||''),
         cat:String(r[4]||''),
-        amt:parseFloat(r[5])||0,
-        method:String(r[6]||'Cash'),
-        by:String(r[7]||'Owner'),
-        notes:String(r[8]||'')
+        cur:String(r[5]||'USD'),
+        amt:parseFloat(r[6])||0,
+        fx:r[7]?parseFloat(r[7])||null:null,
+        method:String(r[9]||'Cash'),
+        by:String(r[10]||'Owner'),
+        notes:String(r[11]||'')
       }));
     } else if(txnRows.length===1){
       TXN=[];// Only header row, no data
@@ -1265,7 +1567,7 @@ function addStaffMember(){
 
 // INIT
 document.getElementById('f-date').value=todayISO();
-document.getElementById('r-date').value=todayISO();
+document.getElementById('r-date').value=todayISO();if(document.getElementById('r-usd-actual'))document.getElementById('r-usd-actual').value='';
 document.getElementById('dc-date').value=todayISO();
 document.getElementById('dc-date').addEventListener('change',renderDayClose);
 updateCats();renderDash();renderFX();renderDayClose();buildByDropdowns();
