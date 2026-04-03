@@ -121,6 +121,7 @@ tr:hover td{background:#fafaf8}
   </div>
   <button class="gs-btn" id="gs-btn" onclick="openGS()">⚡ Connect Sheets</button>
 </div>
+<div id="change-impact-bar" style="display:none;background:var(--blue-dk);color:#fff;font-size:12px;padding:7px 16px;text-align:center;position:sticky;top:53px;z-index:98"></div>
 
 <div class="nav">
   <button class="on" onclick="go('dashboard',this)">Dashboard</button>
@@ -166,6 +167,11 @@ tr:hover td{background:#fafaf8}
     </div>
     <div style="font-size:11px;color:var(--blue-dk);margin-top:6px;opacity:.75">Use <strong>Load from Sheets</strong> on a new device to restore all your data from the cloud.</div>
     <div class="cfm" id="sync-msg"></div>
+  </div>
+
+  <div class="card no-print" style="background:var(--gray-lt);border-color:var(--border)">
+    <div class="card-title">Snapshots — Point-in-Time Reference</div>
+    <div id="snap-list"><div class="empty">No snapshots yet.</div></div>
   </div>
 </div>
 
@@ -541,8 +547,17 @@ let RECON=L.get('mfc3_rec')||[];
 let GS=L.get('mfc3_gs')||{id:'',url:'',on:false};
 let STAFF=L.get('mfc3_staff')||['Owner'];
 let CLOSED=L.get('mfc3_closed')||[];  // array of ISO date strings
-function save(){L.set('mfc3_txn',TXN);L.set('mfc3_fx',FX);L.set('mfc3_rec',RECON);L.set('mfc3_gs',GS);L.set('mfc3_staff',STAFF);L.set('mfc3_closed',CLOSED);}
+let SNAP=L.get('mfc3_snap')||[];      // snapshots array
+function save(){L.set('mfc3_txn',TXN);L.set('mfc3_fx',FX);L.set('mfc3_rec',RECON);L.set('mfc3_gs',GS);L.set('mfc3_staff',STAFF);L.set('mfc3_closed',CLOSED);L.set('mfc3_snap',SNAP);}
 function isDayClosed(iso){return CLOSED.includes(iso);}
+// Silently reset reconciliation to "Pending" for a given date when data changes
+function invalidateRecon(date){
+  RECON=RECON.map(r=>{
+    if(r.date===date){return Object.assign({},r,{status:'pending',ok:false,usdOK:false,lrdOK:false,invalidated:true});}
+    return r;
+  });
+  save();
+}
 function methodClass(m){if(!m||m==='Cash')return 'cash';if(m.toLowerCase().includes('mobile'))return 'mobile';return 'bank';}
 function methodShort(m){if(!m||m==='Cash')return 'Cash';if(m.toLowerCase().includes('mobile'))return m.includes('Orange')?'MM-Orange':'MM-MTN';return 'Bank';}
 function populateByDropdown(selId){
@@ -717,9 +732,12 @@ function saveEntry(){
     const idx=TXN.findIndex(t=>t.id===EDIT_ID);
     if(idx>-1){
       if(isDayClosed(TXN[idx].date)&&!confirm('WARNING: This transaction is on a CLOSED day. Editing it will affect the audit record. Proceed?')){return;}
+      capturePreChange();
       TXN[idx]=Object.assign({},TXN[idx],txn);
       msg.className='cfm cfm-ok';msg.textContent='✓ Updated — '+cur+' '+amt.toFixed(2)+' '+type+(fx?' @ '+fx.toFixed(2)+' LRD/$':'');
     }
+    invalidateRecon(txn.date);
+    showChangeImpact();
     EDIT_ID=null;
     document.querySelector('#tab-log .btn-primary').textContent='Save Transaction';
     document.getElementById('edit-cancel-btn').style.display='none';
@@ -734,8 +752,10 @@ function saveEntry(){
       msg.textContent='Saved — '+type+' · '+dispAmt+dispUSD+' · '+biz+' · By: '+by;
       setTimeout(()=>msg.textContent='',4000);
     }
-    TXN.push(Object.assign({id:Date.now()},txn));
-    syncRow(TXN[TXN.length-1]);
+    const _newTxn=Object.assign({id:Date.now()},txn);
+    TXN.push(_newTxn);
+    if(txn.date!==todayISO()) invalidateRecon(txn.date);
+    syncRow(_newTxn);
   }
   save();
   document.getElementById('f-amt').value='';
@@ -787,12 +807,90 @@ function deleteTxn(id){
     const dispAmt=(t.cur==='LRD')?fmtL(t.amt):fmtU(t.amt);
     if(!confirm('Delete this transaction?\n\n'+dlabel(t.date)+' · '+t.biz+' · '+t.type+' · '+dispAmt+'\n\nThis cannot be undone.'))return;
   }
+  const _delDate=t.date;
+  capturePreChange();
   TXN=TXN.filter(x=>x.id!==id);
-  save();renderLedger();renderDash();
+  invalidateRecon(_delDate);
+  save();renderLedger();renderDash();showChangeImpact();
 }
 function updateFxHint(){
   const el=document.getElementById('f-fx-hint');
   if(el)el.textContent='1 USD = '+curFX().toFixed(2)+' LRD';
+}
+function markNoBusinessDay(iso){
+  if(!CLOSED.includes(iso)) CLOSED.push(iso);
+  save();renderDash();renderDayClose();
+}
+
+// ── SNAPSHOT SYSTEM ──
+function takeSnapshot(label){
+  const bal=calcBalances(TXN);
+  const p=calcProfit(TXN);
+  const snap={
+    ts:new Date().toISOString(),
+    label:label||'Manual',
+    profit:parseFloat(p.net.toFixed(2)),
+    usdCash:parseFloat(bal.usdCash.toFixed(2)),
+    lrdCash:parseFloat(bal.lrdCash.toFixed(0)),
+    txnCount:TXN.length
+  };
+  SNAP.push(snap);
+  if(SNAP.length>20) SNAP=SNAP.slice(-20); // keep last 20
+  save();
+  renderSnapshots();
+}
+function renderSnapshots(){
+  const el=document.getElementById('snap-list');
+  if(!el)return;
+  if(!SNAP.length){el.innerHTML='<div class="empty">No snapshots yet. Snapshots are taken automatically at reconciliation.</div>';return;}
+  const last=SNAP[SNAP.length-1];
+  const prev=SNAP.length>1?SNAP[SNAP.length-2]:null;
+  const diffP=prev?(last.profit-prev.profit):null;
+  const diffU=prev?(last.usdCash-prev.usdCash):null;
+  const diffL=prev?(last.lrdCash-prev.lrdCash):null;
+  el.innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div class="m"><div class="m-lbl">Latest Snapshot</div><div style="font-size:12px;color:var(--text2);margin-top:2px">${new Date(last.ts).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+        <div style="margin-top:8px;font-size:13px">
+          <div>Net Profit: <strong>${fmtU(last.profit)}</strong>${diffP!==null?' <span style="color:'+( diffP>=0?'var(--green)':'var(--red-mid)')+';">'+(diffP>=0?'+':'')+fmtU(diffP)+'</span>':''}</div>
+          <div>USD Cash: <strong>${fmtU(last.usdCash)}</strong>${diffU!==null?' <span style="color:'+( diffU>=0?'var(--green)':'var(--red-mid)')+';">'+(diffU>=0?'+':'')+fmtU(diffU)+'</span>':''}</div>
+          <div>LRD Cash: <strong>${fmtL(last.lrdCash)}</strong>${diffL!==null?' <span style="color:'+( diffL>=0?'var(--green)':'var(--red-mid)')+';">'+(diffL>=0?'+':'')+fmtL(Math.abs(diffL))+'</span>':''}</div>
+          <div style="color:var(--text3);font-size:11px;margin-top:4px">${last.txnCount} transactions · ${last.label}</div>
+        </div>
+      </div>
+      <div class="m"><div class="m-lbl">Snapshot History</div>
+        <div style="margin-top:6px;max-height:120px;overflow-y:auto">
+          ${[...SNAP].reverse().slice(0,8).map(s=>`<div style="font-size:12px;padding:3px 0;border-bottom:1px solid #f0eeea;display:flex;justify-content:space-between"><span style="color:var(--text3)">${new Date(s.ts).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</span><span>${fmtU(s.profit)}</span><span style="color:var(--text3);font-size:11px">${s.label}</span></div>`).join('')}
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-outline" onclick="takeSnapshot('Manual')" style="font-size:12px;padding:6px 14px">📸 Take Snapshot Now</button>`;
+}
+
+// ── LAST CHANGE IMPACT ──
+let _preChangeState=null;
+function capturePreChange(){
+  const bal=calcBalances(TXN);
+  const p=calcProfit(TXN);
+  _preChangeState={profit:p.net,usdCash:bal.usdCash,lrdCash:bal.lrdCash};
+}
+function showChangeImpact(){
+  if(!_preChangeState)return;
+  const bal=calcBalances(TXN);
+  const p=calcProfit(TXN);
+  const dP=p.net-_preChangeState.profit;
+  const dU=bal.usdCash-_preChangeState.usdCash;
+  const dL=bal.lrdCash-_preChangeState.lrdCash;
+  _preChangeState=null;
+  if(Math.abs(dP)<0.001&&Math.abs(dU)<0.001&&Math.abs(dL)<1)return;
+  const el=document.getElementById('change-impact-bar');
+  if(!el)return;
+  el.style.display='block';
+  el.innerHTML=`<strong>Last change impact:</strong> &nbsp;
+    Profit: <span style="color:${dP>=0?'var(--green)':'var(--red-mid)'}">${dP>=0?'+':''}${fmtU(dP)}</span> &nbsp;
+    USD Cash: <span style="color:${dU>=0?'var(--green)':'var(--red-mid)'}">${dU>=0?'+':''}${fmtU(dU)}</span> &nbsp;
+    LRD Cash: <span style="color:${dL>=0?'var(--green)':'var(--red-mid)'}">${dL>=0?'+':''}${fmtL(Math.abs(dL))}</span>`;
+  setTimeout(()=>{if(el)el.style.display='none';},8000);
 }
 
 // DASHBOARD
@@ -864,59 +962,47 @@ function renderDash(){
     alerts.push({c:'a-bad',m:'⚠ Owner Draw ('+fmtU(p.draw)+') exceeds Operating Profit ('+fmtU(p.opProfit)+'). Business is not covering its own draws.'});
   }
 
-  // Expense spike alert — today vs 7-day average
+  // Expense spike — today vs last 3 active days only
   const todayISO2=todayISO();
-  const todayExp2=TXN.filter(t=>t.date===todayISO2&&t.type==='Expense').reduce((a,t)=>a+t.amt,0);
-  const last7Days=[];
-  for(let i=1;i<=7;i++){const d=new Date();d.setDate(d.getDate()-i);last7Days.push(d.toISOString().split('T')[0]);}
-  const last7Exp=last7Days.map(d=>TXN.filter(t=>t.date===d&&t.type==='Expense').reduce((a,t)=>a+t.amt,0));
-  const activeDays=last7Exp.filter(v=>v>0);
-  if(activeDays.length>=2&&todayExp2>0){
-    const avg7=activeDays.reduce((a,v)=>a+v,0)/activeDays.length;
-    const spike=todayExp2/avg7;
-    if(spike>=2){
-      alerts.push({c:'a-bad',m:'Expense spike: Today\'s expenses ('+fmtU(todayExp2)+') are '+spike.toFixed(1)+'× the '+activeDays.length+'-day average ('+fmtU(avg7)+'). Verify all entries.'});
-    } else if(spike>=1.5){
-      alerts.push({c:'a-warn',m:'Elevated expenses: Today ('+fmtU(todayExp2)+') is '+spike.toFixed(1)+'× the recent daily average ('+fmtU(avg7)+'). Review if expected.'});
-    }
+  const todayExp2=TXN.filter(t=>t.date===todayISO2&&t.type==='Expense').reduce((a,t)=>a+toUSD(t),0);
+  const last3Days=[];
+  for(let i=1;i<=3;i++){const d=new Date();d.setDate(d.getDate()-i);last3Days.push(d.toISOString().split('T')[0]);}
+  const last3Exp=last3Days.map(d=>TXN.filter(t=>t.date===d&&t.type==='Expense').reduce((a,t)=>a+toUSD(t),0));
+  const activeDays3=last3Exp.filter(v=>v>0);
+  if(activeDays3.length>=2&&todayExp2>0){
+    const avg3=activeDays3.reduce((a,v)=>a+v,0)/activeDays3.length;
+    const spike=todayExp2/avg3;
+    if(spike>=2) alerts.push({c:'a-bad',m:'Expense spike: Today '+fmtU(todayExp2)+' is '+spike.toFixed(1)+'× recent average ('+fmtU(avg3)+'). Verify entries.'});
   }
 
-  // Missing entry alerts — check last 7 days
-  const today=todayISO();
-  for(let i=1;i<=7;i++){
-    const d=new Date();d.setDate(d.getDate()-i);
-    const iso=d.toISOString().split('T')[0];
-    if(isDayClosed(iso))continue; // closed days are intentional
-    const dayTxns=TXN.filter(t=>t.date===iso);
-    if(dayTxns.length===0)alerts.push({c:'a-warn',m:'No transactions logged on '+dlabel(iso)+'. Was this a rest day or a missing entry?'});
-    else{
-      const hasInc=dayTxns.some(t=>t.type==='Income');
-      const hasExp=dayTxns.some(t=>t.type==='Expense');
-      if(hasInc&&!hasExp)alerts.push({c:'a-warn',m:dlabel(iso)+': Income recorded but no expenses. Did you forget to log costs?'});
-    }
+  // Missing entry — ONLY if yesterday had transactions AND today has none (not more)
+  const yISO=(()=>{const d=new Date();d.setDate(d.getDate()-1);return d.toISOString().split('T')[0];})();
+  const twoDISO=(()=>{const d=new Date();d.setDate(d.getDate()-2);return d.toISOString().split('T')[0];})();
+  const todayTxns=TXN.filter(t=>t.date===todayISO2);
+  const yTxns=TXN.filter(t=>t.date===yISO);
+  if(yTxns.length>0&&todayTxns.length===0&&!isDayClosed(todayISO2)){
+    alerts.push({c:'a-warn',m:'No entries today yet. Yesterday had '+yTxns.length+' transaction(s). <button onclick="markNoBusinessDay(\x27'+todayISO2+'\x27)" style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--amber-dk);background:var(--amber-lt);color:var(--amber-dk);cursor:pointer">Mark as No Business Day</button>'});
+  }
+  // Also check 2 days ago if yesterday was also empty (catches 2-day gaps)
+  const twoDTxns=TXN.filter(t=>t.date===twoDISO);
+  if(twoDTxns.length>0&&yTxns.length===0&&!isDayClosed(yISO)){
+    alerts.push({c:'a-warn',m:'No entries on '+dlabel(yISO)+'. <button onclick="markNoBusinessDay(\x27'+yISO+'\x27)" style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--amber-dk);background:var(--amber-lt);color:var(--amber-dk);cursor:pointer">Mark as No Business Day</button>'});
   }
 
   // Per-currency reconciliation mismatch alerts
-  const lastRecon=RECON.length?RECON[RECON.length-1]:null;
+  const validRecons=RECON.filter(r=>!r.invalidated);
+  const lastRecon=validRecons.length?validRecons[validRecons.length-1]:null;
   if(lastRecon){
-    if(!lastRecon.usdOK&&lastRecon.usdDiff!==undefined){
-      alerts.push({c:'a-bad',m:'⚠ USD Cash Mismatch on '+dlabel(lastRecon.date)+': Difference of '+fmtU(Math.abs(lastRecon.usdDiff))+'. Investigate before next shift.'});
-    }
-    if(!lastRecon.lrdOK&&lastRecon.lrdDiff!==undefined){
-      alerts.push({c:'a-bad',m:'⚠ LRD Cash Mismatch on '+dlabel(lastRecon.date)+': Difference of '+fmtL(Math.abs(lastRecon.lrdDiff))+'. Investigate before next shift.'});
-    }
+    if(!lastRecon.usdOK&&lastRecon.usdDiff!==undefined)
+      alerts.push({c:'a-bad',m:'USD Cash Mismatch on '+dlabel(lastRecon.date)+': '+fmtU(Math.abs(lastRecon.usdDiff))+' difference. Investigate before next shift.'});
+    if(!lastRecon.lrdOK&&lastRecon.lrdDiff!==undefined)
+      alerts.push({c:'a-bad',m:'LRD Cash Mismatch on '+dlabel(lastRecon.date)+': '+fmtL(Math.abs(lastRecon.lrdDiff))+' difference. Investigate before next shift.'});
     if(lastRecon.ok){
       const daysSince=Math.floor((new Date()-new Date(lastRecon.date+'T00:00:00'))/(1000*60*60*24));
-      if(daysSince>1) alerts.push({c:'a-warn',m:'Last reconciliation was '+daysSince+' days ago ('+dlabel(lastRecon.date)+'). Run daily for accuracy.'});
+      if(daysSince>1) alerts.push({c:'a-warn',m:'Last reconciliation was '+daysSince+' days ago. Run daily for accuracy.'});
     }
-  }
-  // Cash flow check per currency
-  const cashIncUSD=month.filter(t=>t.type==='Income'&&t.method==='Cash'&&(t.cur||'USD')==='USD').reduce((a,t)=>a+t.amt,0);
-  const cashIncLRD=month.filter(t=>t.type==='Income'&&t.method==='Cash'&&t.cur==='LRD').reduce((a,t)=>a+t.amt,0);
-  const cashOutUSD=month.filter(t=>t.type!=='Income'&&t.method==='Cash'&&(t.cur||'USD')==='USD'&&t.type!=='Currency Exchange').reduce((a,t)=>a+t.amt,0);
-  const cashOutLRD=month.filter(t=>t.type!=='Income'&&t.method==='Cash'&&t.cur==='LRD'&&t.type!=='Currency Exchange').reduce((a,t)=>a+t.amt,0);
-  if(cashIncUSD>200&&(cashIncUSD-cashOutUSD)<cashIncUSD*0.1){
-    alerts.push({c:'a-warn',m:'USD cash flow: High income ('+fmtU(cashIncUSD)+') but low net balance. Review draws and expenses.'});
+  } else if(TXN.length>3){
+    alerts.push({c:'a-warn',m:'No valid reconciliation on record. Run a reconciliation to verify cash balances.'});
   }
 
   if(!alerts.length)alerts.push({c:'a-ok',m:'All checks passed — no alerts'});
@@ -927,6 +1013,7 @@ function renderDash(){
     document.getElementById('gs-btn').textContent='Sheets Connected';
     document.getElementById('gs-btn').className='gs-btn on';
   }
+  renderSnapshots();
 }
 
 // LEDGER
@@ -1223,6 +1310,7 @@ function runRecon(){
     mmUSD,mmLRD,bankUSD,bankLRD,
     ts:new Date().toISOString()
   });
+  takeSnapshot('Reconciliation — '+dlabel(d));
   save();renderRecon();
 }
 
@@ -1235,17 +1323,25 @@ function renderRecon(){
     +'<th>LRD Expected</th><th>LRD Actual</th><th>LRD Diff</th>'
     +'<th>Status</th>'
     +'</tr></thead><tbody>'
-    +[...RECON].reverse().slice(0,10).map(r=>`<tr>
-      <td style="white-space:nowrap">${dlabel(r.date)}</td>
-      <td>${r.biz}</td>
-      <td>${fmtU(r.usdExpected||0)}</td>
-      <td>${fmtU(r.usdActual||0)}</td>
-      <td style="font-weight:600;color:${r.usdOK?'var(--green)':'var(--red-mid)'}">${(r.usdDiff||0)>=0?'+':''}${fmtU(Math.abs(r.usdDiff||0))} ${r.usdOK?'✓':'⚠'}</td>
-      <td>${fmtL(r.lrdExpected||0)}</td>
-      <td>${fmtL(r.lrdActual||0)}</td>
-      <td style="font-weight:600;color:${r.lrdOK?'var(--green)':'var(--red-mid)'}">${(r.lrdDiff||0)>=0?'+':''}${fmtL(Math.abs(r.lrdDiff||0))} ${r.lrdOK?'✓':'⚠'}</td>
-      <td><span class="badge ${r.ok?'b-inc':r.usdOK||r.lrdOK?'b-draw':'b-exp'}">${r.ok?'OK':!r.usdOK&&!r.lrdOK?'BOTH MISMATCH':!r.usdOK?'USD MISMATCH':'LRD MISMATCH'}</span></td>
-    </tr>`).join('')
+    +[...RECON].reverse().slice(0,10).map(r=>{
+      if(r.invalidated) return `<tr style="opacity:.55">
+        <td style="white-space:nowrap">${dlabel(r.date)}</td>
+        <td>${r.biz}</td>
+        <td colspan="6" style="color:var(--text3);font-style:italic">Data changed after reconciliation</td>
+        <td><span class="badge b-draw">Pending</span></td>
+      </tr>`;
+      return `<tr>
+        <td style="white-space:nowrap">${dlabel(r.date)}</td>
+        <td>${r.biz}</td>
+        <td>${fmtU(r.usdExpected||0)}</td>
+        <td>${fmtU(r.usdActual||0)}</td>
+        <td style="font-weight:600;color:${r.usdOK?'var(--green)':'var(--red-mid)'}">${(r.usdDiff||0)>=0?'+':''}${fmtU(Math.abs(r.usdDiff||0))} ${r.usdOK?'✓':'⚠'}</td>
+        <td>${fmtL(r.lrdExpected||0)}</td>
+        <td>${fmtL(r.lrdActual||0)}</td>
+        <td style="font-weight:600;color:${r.lrdOK?'var(--green)':'var(--red-mid)'}">${(r.lrdDiff||0)>=0?'+':''}${fmtL(Math.abs(r.lrdDiff||0))} ${r.lrdOK?'✓':'⚠'}</td>
+        <td><span class="badge ${r.ok?'b-inc':r.usdOK||r.lrdOK?'b-draw':'b-exp'}">${r.ok?'OK':!r.usdOK&&!r.lrdOK?'BOTH MISMATCH':!r.usdOK?'USD MISMATCH':'LRD MISMATCH'}</span></td>
+      </tr>`;
+    }).join('')
     +'</tbody></table></div>';
 }
 
@@ -1445,6 +1541,7 @@ async function syncAll(){
     await gsPost({tab:'Master Log',clear:true,headers:hdrs,rows});
     await gsPost({tab:'FX Rates',clear:true,headers:['Date','Rate LRD/USD','Source'],rows:FX.map(r=>[r.date,r.rate,r.src])});
     await gsPost({tab:'Closed Days',clear:true,headers:['Date','Status'],rows:CLOSED.map(d=>[d,'Closed'])});
+    if(SNAP.length) await gsPost({tab:'Snapshots',clear:true,headers:['Timestamp','Label','Net Profit USD','USD Cash','LRD Cash','Txn Count'],rows:SNAP.map(s=>[s.ts,s.label,s.profit,s.usdCash,s.lrdCash,s.txnCount])});
     GS.lastSync=new Date().toISOString();save();
     msg.className='cfm cfm-ok';msg.textContent='✓ Sync sent — '+TXN.length+' transactions. Check your Google Sheet now to confirm rows appeared.';
   }catch(e){
