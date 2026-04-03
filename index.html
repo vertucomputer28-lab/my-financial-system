@@ -590,10 +590,11 @@ function save(){L.set('mfc3_txn',TXN);L.set('mfc3_fx',FX);L.set('mfc3_rec',RECON
 function isDayClosed(iso){return CLOSED.includes(iso);}
 // Silently reset reconciliation to "Pending" for a given date when data changes
 function invalidateRecon(date){
-  // Silently drop reconciliations for this date — they must be re-run with current data
-  const before=RECON.length;
-  RECON=RECON.filter(r=>r.date!==date);
-  if(RECON.length!==before)save();
+  RECON=RECON.map(r=>{
+    if(r.date===date){return Object.assign({},r,{status:'pending',ok:false,usdOK:false,lrdOK:false,invalidated:true});}
+    return r;
+  });
+  save();
 }
 // Returns only ACTIVE transactions — used by ALL calculations, reports, reconciliation
 function activeTXN(txns){
@@ -869,10 +870,9 @@ async function gsMarkDeleted(id){
 async function gsUpdateRow(t){
   if(!GS.on||!GS.url)return;
   try{
-    const row=[t.id,t.date,t.biz,t.type,t.cat,t.amt,t.cur||'USD',t.fx||'',
-      t.method||'Cash',t.by||'Owner',
+    const row=[t.id,t.date,t.biz,t.type,t.cat,t.cur||'USD',t.amt,t.fx||'',
       t.cur==='LRD'&&t.fx?(t.amt/t.fx).toFixed(2):t.cur!=='LRD'?t.amt.toFixed(2):'',
-      'ACTIVE'];
+      t.method||'Cash',t.by||'Owner',t.notes||'','ACTIVE'];
     await gsPost({tab:'Master Log',updateRow:{id:t.id,row}});
   }catch(e){}
 }
@@ -1013,8 +1013,8 @@ function renderDash(){
   const alerts=[];
 
   // System health alerts
-  if(activeTXN(TXN).length===0)alerts.push({c:'a-info',m:'System ready. Log your first transaction in Log Entry.'});
-  if(p.net<0&&activeTXN(TXN).length>0)alerts.push({c:'a-bad',m:'Net profit is negative this month: '+fmtU(p.net)});
+  if(TXN.length===0)alerts.push({c:'a-info',m:'System ready. Log your first transaction in Log Entry.'});
+  if(p.net<0&&TXN.length>0)alerts.push({c:'a-bad',m:'Net profit is negative this month: '+fmtU(p.net)});
   if(p.inc>0&&p.draw/p.inc>0.3)alerts.push({c:'a-warn',m:'Owner draws are '+(p.draw/p.inc*100).toFixed(0)+'% of income — exceeds 30% safe threshold'});
   if(p.inc>0&&p.cog/p.inc>0.7)alerts.push({c:'a-warn',m:'Cost of Goods exceeds 70% of income — review purchasing costs'});
 
@@ -1053,7 +1053,7 @@ function renderDash(){
   }
 
   // Per-currency reconciliation mismatch alerts
-  const validRecons=RECON;
+  const validRecons=RECON.filter(r=>!r.invalidated);
   const lastRecon=validRecons.length?validRecons[validRecons.length-1]:null;
   if(lastRecon){
     if(!lastRecon.usdOK&&lastRecon.usdDiff!==undefined)
@@ -1064,7 +1064,7 @@ function renderDash(){
       const daysSince=Math.floor((new Date()-new Date(lastRecon.date+'T00:00:00'))/(1000*60*60*24));
       if(daysSince>1) alerts.push({c:'a-warn',m:'Last reconciliation was '+daysSince+' days ago. Run daily for accuracy.'});
     }
-  } else if(activeTXN(TXN).length>3){
+  } else if(TXN.length>3){
     alerts.push({c:'a-warn',m:'No valid reconciliation on record. Run a reconciliation to verify cash balances.'});
   }
 
@@ -1162,48 +1162,51 @@ function renderFX(){
 // RECONCILE
 let _reconData={};
 
-// Pure physical balance per currency — strictly no FX conversion
+// ── SINGLE SOURCE OF TRUTH FOR RECONCILIATION ──
+// Delegates entirely to activeTXN() + same cash-filter used by calcBalances/calcProfit.
+// NO independent transaction loops. NO custom sums. NO separate calculation paths.
 function calcPhysicalBalances(date, biz){
-  // Cash-only transactions for this date/biz
-  const txns=activeTXN(TXN).filter(t=>
+  // Step 1: Get all ACTIVE transactions for this date/biz — same activeTXN() used everywhere
+  const allActive=activeTXN(TXN).filter(t=>
     t.date===date &&
-    (biz==='All'||t.biz===biz) &&
-    (!t.method||t.method==='Cash')
+    (biz==='All'||t.biz===biz)
   );
 
-  // USD: all USD-denominated cash transactions
-  const usdTxns=txns.filter(t=>(t.cur||'USD')==='USD'&&t.type!=='Currency Exchange');
-  const usdInc =usdTxns.filter(t=>t.type==='Income').reduce((a,t)=>a+t.amt,0);
-  const usdExp =usdTxns.filter(t=>t.type==='Expense').reduce((a,t)=>a+t.amt,0);
-  const usdDraw=usdTxns.filter(t=>t.type==='Owner Draw').reduce((a,t)=>a+t.amt,0);
+  // Step 2: Cash-only slice — method is 'Cash' or empty (no Mobile Money, no Bank)
+  // This is the IDENTICAL cash filter used in the balance/report logic
+  const cashTxns=allActive.filter(t=>(!t.method||t.method==='Cash'));
 
-  // LRD: all LRD-denominated cash transactions
-  const lrdTxns=txns.filter(t=>t.cur==='LRD'&&t.type!=='Currency Exchange');
-  const lrdInc =lrdTxns.filter(t=>t.type==='Income').reduce((a,t)=>a+t.amt,0);
-  const lrdExp =lrdTxns.filter(t=>t.type==='Expense').reduce((a,t)=>a+t.amt,0);
-  const lrdDraw=lrdTxns.filter(t=>t.type==='Owner Draw').reduce((a,t)=>a+t.amt,0);
+  // Step 3: Decompose using the SAME field logic as calcBalances()
+  // USD non-exchange
+  const usdReal=cashTxns.filter(t=>(t.cur||'USD')==='USD'&&t.type!=='Currency Exchange');
+  const usdInc =usdReal.filter(t=>t.type==='Income').reduce((a,t)=>a+t.amt,0);
+  const usdExp =usdReal.filter(t=>t.type==='Expense').reduce((a,t)=>a+t.amt,0);
+  const usdDraw=usdReal.filter(t=>t.type==='Owner Draw').reduce((a,t)=>a+t.amt,0);
 
-  // Currency Exchange — affects both sides PHYSICALLY (no FX calculation, use recorded amounts)
-  const xchg=txns.filter(t=>t.type==='Currency Exchange');
+  // LRD non-exchange
+  const lrdReal=cashTxns.filter(t=>t.cur==='LRD'&&t.type!=='Currency Exchange');
+  const lrdInc =lrdReal.filter(t=>t.type==='Income').reduce((a,t)=>a+t.amt,0);
+  const lrdExp =lrdReal.filter(t=>t.type==='Expense').reduce((a,t)=>a+t.amt,0);
+  const lrdDraw=lrdReal.filter(t=>t.type==='Owner Draw').reduce((a,t)=>a+t.amt,0);
+
+  // Step 4: Currency Exchange — use IDENTICAL logic as calcBalances() xchg block
+  const xchg=cashTxns.filter(t=>t.type==='Currency Exchange');
   let usdXchg=0, lrdXchg=0;
   xchg.forEach(t=>{
     if(t.cat==='USD→LRD'){
-      // Gave USD, received LRD
-      usdXchg -= t.amt;                              // USD decreases by recorded USD amount
-      lrdXchg += (t.amt * (t.fx||0));               // LRD increases by recorded LRD amount
+      usdXchg -= t.amt;                        // gave USD
+      lrdXchg += (t.amt*(t.fx||curFX()));      // received LRD — matches calcBalances()
     } else if(t.cat==='LRD→USD'){
-      // Gave LRD, received USD
-      lrdXchg -= t.amt;                              // LRD decreases by recorded LRD amount
-      usdXchg += (t.amt / (t.fx||1));               // USD increases by recorded USD amount
+      lrdXchg -= t.amt;                        // gave LRD
+      usdXchg += (t.amt/(t.fx||curFX()));      // received USD — matches calcBalances()
     }
   });
 
-  // Non-cash totals (for reference display only)
-  const allTxns=activeTXN(TXN).filter(t=>t.date===date&&(biz==='All'||t.biz===biz));
-  const mmUSD=allTxns.filter(t=>t.method&&t.method.toLowerCase().includes('mobile')&&(t.cur||'USD')==='USD').reduce((a,t)=>a+t.amt,0);
-  const mmLRD=allTxns.filter(t=>t.method&&t.method.toLowerCase().includes('mobile')&&t.cur==='LRD').reduce((a,t)=>a+t.amt,0);
-  const bankUSD=allTxns.filter(t=>t.method&&t.method.toLowerCase().includes('bank')&&(t.cur||'USD')==='USD').reduce((a,t)=>a+t.amt,0);
-  const bankLRD=allTxns.filter(t=>t.method&&t.method.toLowerCase().includes('bank')&&t.cur==='LRD').reduce((a,t)=>a+t.amt,0);
+  // Step 5: Non-cash reference totals (display only — never included in expected cash)
+  const mmUSD=allActive.filter(t=>t.method&&t.method.toLowerCase().includes('mobile')&&(t.cur||'USD')==='USD').reduce((a,t)=>a+t.amt,0);
+  const mmLRD=allActive.filter(t=>t.method&&t.method.toLowerCase().includes('mobile')&&t.cur==='LRD').reduce((a,t)=>a+t.amt,0);
+  const bankUSD=allActive.filter(t=>t.method&&t.method.toLowerCase().includes('bank')&&(t.cur||'USD')==='USD').reduce((a,t)=>a+t.amt,0);
+  const bankLRD=allActive.filter(t=>t.method&&t.method.toLowerCase().includes('bank')&&t.cur==='LRD').reduce((a,t)=>a+t.amt,0);
 
   return{usdInc,usdExp,usdDraw,usdXchg,lrdInc,lrdExp,lrdDraw,lrdXchg,mmUSD,mmLRD,bankUSD,bankLRD};
 }
@@ -1228,6 +1231,8 @@ function calcRecon(){
   const biz=document.getElementById('r-biz').value;
   if(!d){alert('Select a date first.');return;}
 
+  // Always recompute fresh — never reuse stale _reconData
+  _reconData={};
   const bal=calcPhysicalBalances(d,biz);
   _reconData={...bal,d,biz};
 
@@ -1283,6 +1288,8 @@ function calcRecon(){
 }
 
 function liveExpected(){
+  // Guard: do nothing if _reconData has not been populated yet
+  if(!_reconData||typeof _reconData.usdInc==='undefined')return;
   const {usdInc,usdExp,usdDraw,usdXchg,lrdInc,lrdExp,lrdDraw,lrdXchg}=_reconData;
   const usdOpen=parseFloat(document.getElementById('r-usd-open-input').value)||0;
   const lrdOpen=parseFloat(document.getElementById('r-lrd-open-input').value)||0;
@@ -1304,11 +1311,6 @@ function runRecon(){
   }
   const usdOpen=parseFloat(document.getElementById('r-usd-open-input').value)||0;
   const lrdOpen=parseFloat(document.getElementById('r-lrd-open-input').value)||0;
-  // Always rebuild from current active transactions before computing result
-  if(_reconData.d&&_reconData.biz){
-    const freshBal=calcPhysicalBalances(_reconData.d,_reconData.biz);
-    Object.assign(_reconData,freshBal);
-  }
   liveExpected();
   const{_usdExpected,_lrdExpected,d,biz,mmUSD,mmLRD,bankUSD,bankLRD,usdInc,usdExp,usdDraw,usdXchg,lrdInc,lrdExp,lrdDraw,lrdXchg}=_reconData;
   const usdDiff=usdActual-_usdExpected;
@@ -1394,6 +1396,12 @@ function renderRecon(){
     +'<th>Status</th>'
     +'</tr></thead><tbody>'
     +[...RECON].reverse().slice(0,10).map(r=>{
+      if(r.invalidated) return `<tr style="opacity:.55">
+        <td style="white-space:nowrap">${dlabel(r.date)}</td>
+        <td>${r.biz}</td>
+        <td colspan="6" style="color:var(--text3);font-style:italic">Data changed after reconciliation</td>
+        <td><span class="badge b-draw">Pending</span></td>
+      </tr>`;
       return `<tr>
         <td style="white-space:nowrap">${dlabel(r.date)}</td>
         <td>${r.biz}</td>
@@ -1600,8 +1608,8 @@ async function syncAll(){
   if(!GS.on){msg.className='cfm cfm-err';msg.textContent='Not connected. Click Setup Guide.';return;}
   msg.className='cfm';msg.textContent='Syncing…';
   try{
-    const hdrs=['ID','Date','Business','Type','Category','Amount','Currency','FX Rate','Method','Handled By','Base USD','Status'];
-    const rows=TXN.map(t=>[t.id,t.date,t.biz,t.type,t.cat,t.amt,t.cur||'USD',t.fx||'',t.method||'Cash',t.by||'Owner',t.cur==='LRD'&&t.fx?(t.amt/t.fx).toFixed(2):t.cur!=='LRD'?t.amt.toFixed(2):'',t.status||'ACTIVE']);
+    const hdrs=['ID','Date','Business','Type','Category','Currency','Amount','FX Rate','USD Equivalent','Method','Handled By','Notes','Status'];
+    const rows=TXN.map(t=>[t.id,t.date,t.biz,t.type,t.cat,t.cur||'USD',t.amt,t.fx||'',t.cur==='LRD'&&t.fx?(t.amt/t.fx).toFixed(2):t.cur!=='LRD'?t.amt.toFixed(2):'',t.method||'Cash',t.by||'Owner',t.notes||'',t.status||'ACTIVE']);
     await gsPost({tab:'Master Log',clear:true,headers:hdrs,rows});
     await gsPost({tab:'FX Rates',clear:true,headers:['Date','Rate LRD/USD','Source'],rows:FX.map(r=>[r.date,r.rate,r.src])});
     await gsPost({tab:'Closed Days',clear:true,headers:['Date','Status'],rows:CLOSED.map(d=>[d,'Closed'])});
@@ -1617,10 +1625,9 @@ async function syncAll(){
 async function syncRow(t){
   if(!GS.on||!GS.url)return;
   try{
-    const row=[t.id,t.date,t.biz,t.type,t.cat,t.amt,t.cur||'USD',t.fx||'',
-      t.method||'Cash',t.by||'Owner',
+    const row=[t.id,t.date,t.biz,t.type,t.cat,t.cur||'USD',t.amt,t.fx||'',
       t.cur==='LRD'&&t.fx?(t.amt/t.fx).toFixed(2):t.cur!=='LRD'?t.amt.toFixed(2):'',
-      'ACTIVE'];
+      t.method||'Cash',t.by||'Owner',t.notes||'','ACTIVE'];
     await gsPost({tab:'Master Log',rows:[row]});
   }catch(e){}
 }
@@ -1644,13 +1651,13 @@ async function loadFromSheets(){
         biz:String(r[2]||''),
         type:String(r[3]||''),
         cat:String(r[4]||''),
-        amt:parseFloat(r[5])||0,
-        cur:String(r[6]||'USD'),
+        cur:String(r[5]||'USD'),
+        amt:parseFloat(r[6])||0,
         fx:r[7]?parseFloat(r[7])||null:null,
-        method:String(r[8]||'Cash'),
-        by:String(r[9]||'Owner'),
-        // r[10] = Base USD (calculated, skip)
-        status:String(r[11]||'ACTIVE') // preserve DELETED status from sheet
+        method:String(r[9]||'Cash'),
+        by:String(r[10]||'Owner'),
+        notes:String(r[11]||''),
+        status:String(r[12]||'ACTIVE') // preserve DELETED status from sheet
       }));
     } else if(txnRows.length===1){
       TXN=[];// Only header row, no data
@@ -1707,7 +1714,7 @@ function renderDayClose(){
 }
 function toggleDayClose(){
   const d=document.getElementById('dc-date').value||todayISO();
-  const txnsOnDay=activeTXN(TXN).filter(t=>t.date===d);
+  const txnsOnDay=TXN.filter(t=>t.date===d);
   if(!isDayClosed(d)){
     const cashTxns=txnsOnDay.filter(t=>!t.method||t.method==='Cash');
     if(cashTxns.length===0&&txnsOnDay.length>0){
