@@ -637,6 +637,13 @@ tr:hover td{background:#fafaf8}
     <div class="card-title">Owner Draw vs Net Profit</div>
     <div id="adv-draw-analysis"></div>
   </div>
+
+  <!-- INSIGHTS ENGINE START — container -->
+  <div class="card" id="insights-engine-card">
+    <div class="card-title">AI-Style Insights Engine</div>
+    <div id="insights-container"></div>
+  </div>
+  <!-- INSIGHTS ENGINE END — container -->
 </div>
 <!-- ADVANCED REPORTS TAB END -->
 <div class="modal-bg" id="gs-modal">
@@ -2305,6 +2312,18 @@ function renderAdvanced() {
   advRenderCashFlowSplit(txns);
   advRenderDailyPerf(txns);
   advRenderDrawAnalysis(txns);
+  // INSIGHTS ENGINE START — call
+  const p = calcProfit(txns);
+  // FIX: guard each calcProfit component against undefined before summing
+  // FIX: draw omitted — generateInsights calculates it directly from txns
+  const appData = {
+    txns,
+    inc: p.inc  || 0,
+    exp: (p.cog||0) + (p.oe||0) + (p.maint||0) + (p.admin||0),
+    net: p.net  || 0
+  };
+  renderInsights('insights-container', generateInsights(appData));
+  // INSIGHTS ENGINE END — call
 }
 
 // Re-render on window resize (canvas is responsive but needs explicit redraw)
@@ -2314,6 +2333,179 @@ window.addEventListener('resize', () => {
     advRenderTrend(txns, period);
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INSIGHTS ENGINE START
+// generateInsights(data) — pure function, no side effects, no DOM writes.
+// renderInsights(containerId, insights) — DOM renderer, no external libs.
+// Both functions use only existing globals (TXN, toUSD, fmtU, normDate, activeTXN).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function generateInsights(data) {
+  // FIX: empty-state guard — return immediately when no transaction data exists
+  if (!data || !data.txns || data.txns.length === 0) {
+    return ['ℹ No data yet — start adding transactions'];
+  }
+
+  const insights = [];
+  // FIX: use data.txns, data.inc, data.exp, data.net only — data.draw not trusted (computed below)
+  // FIX: safe defaults so no property is ever undefined
+  const txns = data.txns;
+  const inc  = data.inc || 0;
+  const exp  = data.exp || 0;
+  const net  = data.net || 0;
+
+  // ── A. BEST & WORST DAY ──────────────────────────────────────────────────────
+  const DOW_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const incByDow = [0,0,0,0,0,0,0];
+  // FIX: case-insensitive type comparison to match any casing stored in TXN
+  // FX REQUIRED: toUSD(t) used — t.amt is raw currency, not normalized USD
+  txns.filter(t => t.type && t.type.toLowerCase() === 'income').forEach(t => {
+    const dow = new Date(normDate(t.date) + 'T00:00:00').getDay();
+    incByDow[dow] += toUSD(t);
+  });
+  // FIX: only include days that actually have income (v > 0) — no zero-day distortion
+  const activeDows = incByDow.map((v,i) => ({v,i})).filter(x => x.v > 0);
+  if (activeDows.length >= 2) {
+    const best  = activeDows.reduce((a,b) => b.v > a.v ? b : a);
+    const worst = activeDows.reduce((a,b) => b.v < a.v ? b : a);
+    insights.push('✅ Best day: ' + DOW_LABELS[best.i]  + ' (' + fmtU(best.v)  + ')');
+    insights.push('⚠ Slow day: ' + DOW_LABELS[worst.i] + ' (' + fmtU(worst.v) + ') → Consider promotions');
+  } else if (activeDows.length === 1) {
+    const only = activeDows[0];
+    insights.push('✅ Only active day so far: ' + DOW_LABELS[only.i] + ' (' + fmtU(only.v) + ')');
+  }
+
+  // ── B. BUSINESS PERFORMANCE ──────────────────────────────────────────────────
+  const BIZES = ['Bar','Restaurant','Hall'];
+  const bizInc = BIZES.map(b => ({
+    b,
+    // FIX: case-insensitive income match
+    // FX REQUIRED: toUSD(t) converts LRD amounts to USD equivalent
+    v: txns
+         .filter(t => t.type && t.type.toLowerCase() === 'income' && t.biz === b)
+         .reduce((s,t) => s + toUSD(t), 0)
+  }));
+  const activeBiz = bizInc.filter(x => x.v > 0);
+  if (activeBiz.length > 0) {
+    const top = activeBiz.reduce((a,b) => b.v > a.v ? b : a);
+    insights.push('🏆 Top business: ' + top.b + ' (' + fmtU(top.v) + ')');
+  }
+  bizInc.forEach(x => {
+    // Only warn when that business has some transactions but zero income
+    if (x.v === 0 && txns.some(t => t.biz === x.b)) {
+      insights.push('⚠ ' + x.b + ' has no income → Check activity');
+    }
+  });
+
+  // ── C. EXPENSE WARNING ───────────────────────────────────────────────────────
+  // inc and exp already safe via defaults above
+  if (inc > 0 && exp === 0) {
+    insights.push('⚠ No expenses recorded → Profit may be overstated');
+  }
+
+  // ── D. PROFIT QUALITY ────────────────────────────────────────────────────────
+  // FIX: division guard — only compute margin when inc > 0 (prevents NaN / Infinity)
+  if (inc > 0) {
+    const margin = net / inc;
+    const pct = (margin * 100).toFixed(0);
+    if (margin >= 0.999) {
+      insights.push('⚠ 100% margin detected → Missing cost data');
+    } else if (margin < 0.20) {
+      insights.push('⚠ Low margin (' + pct + '%) → Check expenses');
+    } else {
+      insights.push('✅ Healthy margin (' + pct + '%)');
+    }
+  }
+
+  // ── E. OWNER DRAW ANALYSIS ───────────────────────────────────────────────────
+  // FIX: draw calculated DIRECTLY from transactions — never relies on data.draw
+  // FIX: case-insensitive draw detection
+  // FX REQUIRED: toUSD(t) used — draw amounts may be in LRD
+  const drawTotal = txns
+    .filter(t => t.type && t.type.toLowerCase().includes('draw'))
+    .reduce((s,t) => s + toUSD(t), 0);
+
+  if (drawTotal === 0) {
+    insights.push('✅ No owner draws → Profit reinvested');
+  } else if (net > 0) {
+    // FIX: division guard — net > 0 confirmed before dividing
+    const drawPct = (drawTotal / net * 100).toFixed(0);
+    if (drawTotal / net > 0.5) {
+      insights.push('⚠ High owner draw (' + drawPct + '%) → Risk of cash shortage');
+    }
+  }
+
+  // ── F. SIMPLE TREND ──────────────────────────────────────────────────────────
+  // FIX: case-insensitive filter; ±5% tolerance; no division used
+  // FX REQUIRED: toUSD(t) used — income amounts may be in LRD
+  const incomeTxns = txns
+    .filter(t => t.type && t.type.toLowerCase() === 'income')
+    .sort((a,b) => normDate(a.date).localeCompare(normDate(b.date)));
+
+  if (incomeTxns.length >= 2) {
+    // FIX: Math.floor guarantees mid >= 1 so both slices are always non-empty
+    const mid = Math.floor(incomeTxns.length / 2);
+    const earlyTotal = incomeTxns.slice(0, mid).reduce((s,t) => s + toUSD(t), 0);
+    const lateTotal  = incomeTxns.slice(mid).reduce((s,t)  => s + toUSD(t), 0);
+    // FIX: explicit earlyTotal === 0 branch prevents 0 * 1.05 false-negative
+    if (earlyTotal === 0 && lateTotal > 0) {
+      insights.push('📈 Income trending up');
+    } else if (earlyTotal === 0) {
+      // both halves zero — no meaningful trend, emit nothing
+    } else if (lateTotal > earlyTotal * 1.05) {
+      insights.push('📈 Income trending up');
+    } else if (lateTotal < earlyTotal * 0.95) {
+      insights.push('📉 Income trending down');
+    } else {
+      insights.push('➡ Income is stable');
+    }
+  }
+
+  // Fallback — fires only when all sections produced nothing (e.g. only draws/expenses logged)
+  if (insights.length === 0) {
+    insights.push('ℹ No income transactions found for this period. Log some entries to generate insights.');
+  }
+
+  return insights;
+}
+
+// ── RENDERER ─────────────────────────────────────────────────────────────────
+// Renders each insight string as a styled div. No external libraries.
+// Reuses existing CSS variables for full theme consistency.
+function renderInsights(containerId, insights) {
+  // FIX: container existence guard — bail silently if element is not in DOM
+  const el = document.getElementById(containerId);
+  if (!el) return;
+
+  // FIX: explicit clear before render — prevents stale content on period change
+  el.innerHTML = '';
+
+  if (!insights || insights.length === 0) {
+    el.innerHTML = '<div class="empty">No insights available for this period.</div>';
+    return;
+  }
+
+  el.innerHTML = insights.map(msg => {
+    // FIX: complete emoji→CSS-class mapping per audit spec
+    let cls = 'a-info', dot = 'var(--blue)';
+    if (msg.startsWith('✅')) { cls = 'a-ok';   dot = 'var(--green)';   }
+    if (msg.startsWith('⚠'))  { cls = 'a-warn'; dot = 'var(--amber)';   }
+    if (msg.startsWith('❌')) { cls = 'a-bad';  dot = 'var(--red-mid)'; } // FIX: ❌ → a-bad
+    if (msg.startsWith('📉')) { cls = 'a-warn'; dot = 'var(--amber)';   } // FIX: 📉 → a-warn (per spec)
+    if (msg.startsWith('📈')) { cls = 'a-ok';   dot = 'var(--green)';   }
+    if (msg.startsWith('🏆')) { cls = 'a-ok';   dot = 'var(--green)';   }
+    if (msg.startsWith('➡')) { cls = 'a-info'; dot = 'var(--blue)';    }
+    return `<div class="alert ${cls}" style="margin-bottom:6px">
+      <div class="adot" style="background:${dot}"></div>
+      <span>${msg}</span>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INSIGHTS ENGINE END
+// ═══════════════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ADVANCED REPORTS END
