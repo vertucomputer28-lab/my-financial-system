@@ -114,6 +114,29 @@ tr:hover td{background:#fafaf8}
   .rpt-tbl th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
 .print-header{display:none}
+
+/* BACKUP SYSTEM START — styles */
+.bk-btn{font-size:11px;padding:5px 11px;border-radius:20px;border:1px solid rgba(255,255,255,.35);cursor:pointer;background:transparent;color:#fff;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.bk-btn:hover{background:rgba(255,255,255,.15)}
+.bk-btn.export{border-color:rgba(29,158,117,.7);color:#6ee7c7}
+.bk-btn.import{border-color:rgba(255,255,255,.3);color:#cbd5e1}
+.bk-topbar-group{display:flex;gap:6px;align-items:center}
+.bk-modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;align-items:center;justify-content:center;padding:16px}
+.bk-modal-bg.on{display:flex}
+.bk-modal{background:#fff;border-radius:var(--r);padding:22px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.18)}
+.bk-modal-title{font-size:16px;font-weight:700;margin-bottom:6px}
+.bk-modal-sub{font-size:13px;color:var(--text2);margin-bottom:16px}
+.bk-modal-x{float:right;background:none;border:none;font-size:22px;cursor:pointer;color:var(--text2);margin-top:-4px}
+.bk-file-drop{border:2px dashed var(--border);border-radius:var(--rs);padding:24px 16px;text-align:center;font-size:13px;color:var(--text2);cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:12px}
+.bk-file-drop:hover,.bk-file-drop.drag{border-color:var(--blue);background:var(--blue-lt)}
+.bk-file-drop input{display:none}
+.bk-status{font-size:13px;min-height:20px;margin-top:8px;text-align:center;font-weight:600}
+.bk-status.ok{color:var(--green)}.bk-status.err{color:var(--red-mid)}.bk-status.info{color:var(--blue)}
+.bk-auto-list{font-size:12px;color:var(--text2);margin-top:10px;max-height:90px;overflow-y:auto}
+.bk-auto-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #f0eeea;gap:8px}
+.bk-auto-row:last-child{border-bottom:none}
+.bk-restore-btn{font-size:10px;padding:2px 7px;border-radius:3px;border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);cursor:pointer;white-space:nowrap}
+/* BACKUP SYSTEM END — styles */
 </style>
 </head>
 <body>
@@ -124,6 +147,12 @@ tr:hover td{background:#fafaf8}
     <div class="topbar-sub">Monrovia, Liberia · Bar · Restaurant · Hall</div>
   </div>
   <button class="gs-btn" id="gs-btn" onclick="openGS()">⚡ Connect Sheets</button>
+  <!-- BACKUP SYSTEM START — topbar buttons -->
+  <div class="bk-topbar-group">
+    <button class="bk-btn export" onclick="bkExport()" title="Download full backup as JSON">⬇ Backup</button>
+    <button class="bk-btn import" onclick="bkOpenRestore()" title="Restore from backup file">↑ Restore</button>
+  </div>
+  <!-- BACKUP SYSTEM END — topbar buttons -->
 </div>
 <div id="change-impact-bar" style="display:none;background:var(--blue-dk);color:#fff;font-size:12px;padding:7px 16px;text-align:center;position:sticky;top:53px;z-index:98"></div>
 
@@ -1859,8 +1888,24 @@ function addStaffMember(){
 // Use this to resolve corrupted local state, then reload from Sheets.
 function resetSystem(){
   if(!confirm('RESET DEVICE DATA?\n\nThis clears ALL local transactions, FX rates, reconciliation records, and snapshots from this device.\n\nYour Google Sheets data is NOT affected. You can reload from Sheets afterwards.\n\nProceed?'))return;
+  // ── BACKUP SYSTEM: preserve auto-backup keys before clear ──
+  // localStorage.clear() would otherwise silently erase all auto-backups.
+  // We snapshot them here and write them back immediately after the clear.
+  const _bkPreserve={};
+  try{
+    const idx=localStorage.getItem('mfc3_bk_auto_index');
+    if(idx){_bkPreserve['mfc3_bk_auto_index']=idx;}
+    const last=localStorage.getItem('mfc3_bk_auto_last');
+    if(last){_bkPreserve['mfc3_bk_auto_last']=last;}
+    const slots=JSON.parse(idx||'[]');
+    if(Array.isArray(slots)){slots.forEach(k=>{const v=localStorage.getItem(k);if(v)_bkPreserve[k]=v;});}
+  }catch(e){}
+  // ── END BACKUP SYSTEM preserve ──
   // Clear localStorage
   localStorage.clear();
+  // ── BACKUP SYSTEM: restore auto-backup keys after clear ──
+  try{Object.entries(_bkPreserve).forEach(([k,v])=>localStorage.setItem(k,v));}catch(e){}
+  // ── END BACKUP SYSTEM restore ──
   // Reset all runtime state
   TXN=[];
   FX=[{date:todayISO(),rate:178.50,src:'Central Bank of Liberia'}];
@@ -1897,5 +1942,293 @@ if ("serviceWorker" in navigator) {
     .then(() => console.log("Service Worker Registered"));
 }
 </script>
+
+<!-- BACKUP SYSTEM START — restore modal -->
+<div class="bk-modal-bg" id="bk-restore-modal">
+  <div class="bk-modal">
+    <button class="bk-modal-x" onclick="bkCloseRestore()">×</button>
+    <div class="bk-modal-title">Restore from Backup</div>
+    <div class="bk-modal-sub">Upload a <strong>.json</strong> backup file exported from this app. This will overwrite ALL current local data.</div>
+
+    <div class="bk-file-drop" id="bk-drop-zone" onclick="document.getElementById('bk-file-input').click()"
+         ondragover="bkDragOver(event)" ondragleave="bkDragLeave(event)" ondrop="bkDrop(event)">
+      <input type="file" id="bk-file-input" accept=".json,application/json" onchange="bkFileSelected(event)">
+      <div style="font-size:22px;margin-bottom:6px">📂</div>
+      <div>Click to select or drag &amp; drop a backup file</div>
+      <div id="bk-file-name" style="margin-top:6px;font-weight:600;color:var(--text)"></div>
+    </div>
+
+    <div id="bk-restore-status" class="bk-status"></div>
+
+    <button class="btn btn-primary" id="bk-apply-btn" onclick="bkApplyRestore()" style="display:none;margin-top:12px;background:var(--blue)">✓ Restore &amp; Reload</button>
+
+    <!-- Auto-backups section -->
+    <div class="divider" style="margin:14px 0 10px"></div>
+    <div style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Auto-Saved Backups (last 3)</div>
+    <div id="bk-auto-list" class="bk-auto-list"><div style="color:var(--text3)">No auto-backups yet.</div></div>
+  </div>
+</div>
+<!-- BACKUP SYSTEM END — restore modal -->
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// BACKUP SYSTEM START
+// Features: Export JSON, Import/Restore JSON, Auto-backup daily (last 3 kept)
+// All backup logic is isolated. No existing variables or functions are modified.
+// ═══════════════════════════════════════════════════════════════════
+
+// ── KEYS ──────────────────────────────────────────────────────────
+// All app localStorage keys to include in a full backup.
+// Mirrors the keys used by the existing save() function.
+const BK_APP_KEYS = ['mfc3_txn','mfc3_fx','mfc3_rec','mfc3_gs','mfc3_staff','mfc3_closed','mfc3_snap'];
+
+// Auto-backup localStorage keys (separate namespace — never touched by existing code)
+const BK_AUTO_KEY  = 'mfc3_bk_auto_index'; // array of key names in order
+const BK_AUTO_PFX  = 'mfc3_bk_auto_';      // prefix for individual backup slots
+const BK_AUTO_MAX  = 3;                     // keep at most 3 auto-backups
+const BK_AUTO_LAST = 'mfc3_bk_auto_last';  // ISO date string of last auto-backup
+
+// Staging area for an import before the user confirms
+let _bkPending = null;
+
+// ── EXPORT ────────────────────────────────────────────────────────
+// Collects all app localStorage keys, builds a JSON blob, and triggers download.
+function bkExport() {
+  try {
+    const payload = { _bk_version: 1, _bk_ts: new Date().toISOString(), data: {} };
+    BK_APP_KEYS.forEach(k => {
+      const raw = localStorage.getItem(k);
+      if (raw !== null) {
+        try { payload.data[k] = JSON.parse(raw); } catch(e) { payload.data[k] = raw; }
+      }
+    });
+
+    // Build filename: backup-YYYY-MM-DD-HHMM.json
+    const now = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    const fname = `backup-${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.json`;
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Export failed: ' + e.message);
+  }
+}
+
+// ── RESTORE MODAL — open / close ──────────────────────────────────
+function bkOpenRestore() {
+  _bkPending = null;
+  document.getElementById('bk-file-name').textContent = '';
+  document.getElementById('bk-restore-status').textContent = '';
+  document.getElementById('bk-restore-status').className = 'bk-status';
+  document.getElementById('bk-apply-btn').style.display = 'none';
+  document.getElementById('bk-file-input').value = '';
+  bkRenderAutoList();
+  document.getElementById('bk-restore-modal').classList.add('on');
+}
+function bkCloseRestore() {
+  document.getElementById('bk-restore-modal').classList.remove('on');
+  _bkPending = null;
+}
+
+// ── FILE INPUT HANDLERS ───────────────────────────────────────────
+function bkFileSelected(e) {
+  const file = e.target.files && e.target.files[0];
+  if (file) bkReadFile(file);
+}
+function bkDragOver(e) { e.preventDefault(); document.getElementById('bk-drop-zone').classList.add('drag'); }
+function bkDragLeave(e) { document.getElementById('bk-drop-zone').classList.remove('drag'); }
+function bkDrop(e) {
+  e.preventDefault();
+  document.getElementById('bk-drop-zone').classList.remove('drag');
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file) bkReadFile(file);
+}
+
+// ── FILE VALIDATION & STAGING ─────────────────────────────────────
+function bkReadFile(file) {
+  const statusEl = document.getElementById('bk-restore-status');
+  const nameEl   = document.getElementById('bk-file-name');
+  const applyBtn = document.getElementById('bk-apply-btn');
+  _bkPending = null;
+  applyBtn.style.display = 'none';
+
+  // Basic checks before reading
+  if (!file || file.size === 0) {
+    statusEl.className = 'bk-status err';
+    statusEl.textContent = '✕ File is empty. Please choose a valid backup.';
+    return;
+  }
+  nameEl.textContent = file.name;
+
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const raw = ev.target.result;
+      if (!raw || raw.trim() === '') throw new Error('File is empty');
+
+      const parsed = JSON.parse(raw); // throws on bad JSON
+
+      // Validate structure: must have data key and at least one known app key
+      if (!parsed.data || typeof parsed.data !== 'object') throw new Error('Missing "data" object — this does not look like a valid backup.');
+      const foundKeys = BK_APP_KEYS.filter(k => k in parsed.data);
+      if (foundKeys.length === 0) throw new Error('No recognisable app data found in this file.');
+
+      _bkPending = parsed;
+      const txnCount = Array.isArray(parsed.data['mfc3_txn']) ? parsed.data['mfc3_txn'].length : '?';
+      const ts = parsed._bk_ts ? new Date(parsed._bk_ts).toLocaleString() : 'unknown date';
+      statusEl.className = 'bk-status ok';
+      statusEl.textContent = `✓ Valid backup — ${txnCount} transactions · saved ${ts}`;
+      applyBtn.style.display = 'block';
+    } catch(e) {
+      statusEl.className = 'bk-status err';
+      statusEl.textContent = '✕ Invalid file: ' + e.message;
+      applyBtn.style.display = 'none';
+      _bkPending = null;
+    }
+  };
+  reader.onerror = function() {
+    statusEl.className = 'bk-status err';
+    statusEl.textContent = '✕ Could not read the file. Try again.';
+  };
+  reader.readAsText(file);
+}
+
+// ── APPLY RESTORE ─────────────────────────────────────────────────
+function bkApplyRestore() {
+  if (!_bkPending || !_bkPending.data) {
+    alert('No valid backup loaded. Please select a file first.');
+    return;
+  }
+  if (!confirm('⚠ RESTORE BACKUP\n\nThis will overwrite ALL current data on this device with the backup data.\n\nCurrent data will be lost unless you have already exported it.\n\nContinue?')) return;
+
+  try {
+    // Write every key from the backup to localStorage
+    const data = _bkPending.data;
+    BK_APP_KEYS.forEach(k => {
+      if (k in data) {
+        localStorage.setItem(k, JSON.stringify(data[k]));
+      }
+    });
+    // Reload the app so all runtime state re-initialises cleanly
+    location.reload();
+  } catch(e) {
+    alert('Restore failed: ' + e.message);
+  }
+}
+
+// ── AUTO-BACKUP ───────────────────────────────────────────────────
+// Runs once on page load. Saves at most one backup per calendar day.
+// Keeps only the last BK_AUTO_MAX backups, rotating out the oldest.
+function bkAutoBackup() {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const last  = localStorage.getItem(BK_AUTO_LAST) || '';
+
+    // Already backed up today — skip
+    if (last === today) return;
+
+    // Build backup payload (same structure as manual export)
+    const payload = { _bk_version: 1, _bk_ts: new Date().toISOString(), _bk_auto: true, data: {} };
+    BK_APP_KEYS.forEach(k => {
+      const raw = localStorage.getItem(k);
+      if (raw !== null) {
+        try { payload.data[k] = JSON.parse(raw); } catch(e) { payload.data[k] = raw; }
+      }
+    });
+
+    // Load current auto-backup index
+    let index = [];
+    try { index = JSON.parse(localStorage.getItem(BK_AUTO_KEY) || '[]'); } catch(e) { index = []; }
+    if (!Array.isArray(index)) index = [];
+
+    // Generate a unique slot key
+    const slotKey = BK_AUTO_PFX + today;
+
+    // Rotate: remove oldest if we are at max capacity (and it is not today's slot)
+    while (index.length >= BK_AUTO_MAX) {
+      const oldest = index.shift(); // removes from front
+      if (oldest !== slotKey) {
+        try { localStorage.removeItem(oldest); } catch(e) {}
+      }
+    }
+
+    // Save the new backup and update index
+    localStorage.setItem(slotKey, JSON.stringify(payload));
+    if (!index.includes(slotKey)) index.push(slotKey);
+    localStorage.setItem(BK_AUTO_KEY, JSON.stringify(index));
+    localStorage.setItem(BK_AUTO_LAST, today);
+  } catch(e) {
+    // Auto-backup failure is silent — never break the app
+    console.warn('[MFC Backup] Auto-backup failed:', e.message);
+  }
+}
+
+// ── RENDER AUTO-BACKUP LIST IN MODAL ─────────────────────────────
+function bkRenderAutoList() {
+  const el = document.getElementById('bk-auto-list');
+  if (!el) return;
+  let index = [];
+  try { index = JSON.parse(localStorage.getItem(BK_AUTO_KEY) || '[]'); } catch(e) { index = []; }
+  if (!Array.isArray(index) || index.length === 0) {
+    el.innerHTML = '<div style="color:var(--text3)">No auto-backups saved yet. One will be created on your next visit.</div>';
+    return;
+  }
+  // Show newest first
+  const rows = [...index].reverse().map(slotKey => {
+    let ts = slotKey.replace(BK_AUTO_PFX, ''); // date fallback
+    let txnCount = '?';
+    try {
+      const raw = localStorage.getItem(slotKey);
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p._bk_ts) ts = new Date(p._bk_ts).toLocaleString();
+        if (p.data && Array.isArray(p.data['mfc3_txn'])) txnCount = p.data['mfc3_txn'].length;
+      }
+    } catch(e) {}
+    return `<div class="bk-auto-row">
+      <span>${ts}</span>
+      <span style="color:var(--text3);font-size:11px">${txnCount} txns</span>
+      <button class="bk-restore-btn" onclick="bkRestoreAuto('${slotKey}')">Restore</button>
+    </div>`;
+  });
+  el.innerHTML = rows.join('');
+}
+
+// ── RESTORE FROM AUTO-BACKUP ──────────────────────────────────────
+function bkRestoreAuto(slotKey) {
+  try {
+    const raw = localStorage.getItem(slotKey);
+    if (!raw) { alert('Auto-backup not found.'); return; }
+    const parsed = JSON.parse(raw);
+    if (!parsed.data || typeof parsed.data !== 'object') throw new Error('Invalid auto-backup structure.');
+
+    const ts = parsed._bk_ts ? new Date(parsed._bk_ts).toLocaleString() : 'unknown date';
+    if (!confirm(`Restore auto-backup from ${ts}?\n\nThis will overwrite ALL current device data.\n\nContinue?`)) return;
+
+    BK_APP_KEYS.forEach(k => {
+      if (k in parsed.data) localStorage.setItem(k, JSON.stringify(parsed.data[k]));
+    });
+    location.reload();
+  } catch(e) {
+    alert('Could not restore auto-backup: ' + e.message);
+  }
+}
+
+// ── RUN AUTO-BACKUP ON INIT ───────────────────────────────────────
+// Called immediately after the app's own init block at the bottom of the file.
+// Deferred slightly so it never blocks UI rendering.
+setTimeout(bkAutoBackup, 1500);
+
+// ═══════════════════════════════════════════════════════════════════
+// BACKUP SYSTEM END
+// ═══════════════════════════════════════════════════════════════════
+</script>
+
 </body>
 </html>
