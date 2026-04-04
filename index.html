@@ -115,6 +115,49 @@ tr:hover td{background:#fafaf8}
 }
 .print-header{display:none}
 
+/* SYNC SYSTEM START — styles */
+.sync-now-btn{font-size:11px;padding:5px 12px;border-radius:20px;border:1px solid rgba(29,158,117,.6);cursor:pointer;background:transparent;color:#6ee7c7;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.sync-now-btn:hover{background:rgba(29,158,117,.2)}
+.sync-now-btn:disabled{opacity:.5;cursor:not-allowed}
+.sync-status-bar{font-size:11px;color:rgba(255,255,255,.65);white-space:nowrap;padding:3px 0;display:flex;align-items:center;gap:5px;min-width:0}
+.sync-status-bar.ok{color:#6ee7c7}.sync-status-bar.err{color:#fca5a5}.sync-status-bar.loading{color:rgba(255,255,255,.45)}
+.sync-topbar-group{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+/* SYNC SYSTEM END — styles */
+
+/* ADVANCED REPORTS START — styles */
+.adv-biz-block{margin-bottom:14px;border:1px solid var(--border);border-radius:var(--rs);overflow:hidden}
+.adv-biz-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);font-weight:700;font-size:13px}
+.adv-biz-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border-top:1px solid var(--border)}
+.adv-biz-cell{padding:10px 14px;font-size:13px;border-right:1px solid var(--border)}
+.adv-biz-cell:last-child{border-right:none}
+.adv-biz-cell .lbl{font-size:11px;color:var(--text2);margin-bottom:2px}
+.adv-biz-cell .val{font-weight:700;font-size:15px}
+.adv-bar-track{height:12px;background:var(--gray-lt);border-radius:6px;overflow:hidden;margin:3px 0 1px}
+.adv-bar-fill{height:100%;border-radius:6px;transition:width .4s}
+.adv-exp-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.adv-exp-lbl{width:130px;font-size:12px;color:var(--text2);flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.adv-exp-track{flex:1;height:10px;background:var(--gray-lt);border-radius:5px;overflow:hidden}
+.adv-exp-fill{height:100%;border-radius:5px}
+.adv-exp-val{width:70px;text-align:right;font-weight:700;font-size:12px;flex-shrink:0}
+.adv-method-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #f0eeea;font-size:13px}
+.adv-method-row:last-child{border-bottom:none}
+.adv-pct-pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--gray-lt);color:var(--gray-dk)}
+.adv-dow-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.adv-dow-lbl{width:36px;font-size:12px;color:var(--text2);flex-shrink:0;font-weight:600}
+.adv-dow-track{flex:1;height:22px;background:var(--gray-lt);border-radius:4px;overflow:hidden;position:relative}
+.adv-dow-fill{height:100%;border-radius:4px;display:flex;align-items:center;padding-left:8px;font-size:11px;font-weight:700;color:#fff;white-space:nowrap;transition:width .4s}
+.adv-dow-val{width:70px;text-align:right;font-weight:700;font-size:12px;flex-shrink:0}
+.adv-draw-meter{height:18px;border-radius:9px;background:var(--gray-lt);overflow:hidden;margin:10px 0 6px;position:relative}
+.adv-draw-fill{height:100%;border-radius:9px;transition:width .4s}
+.adv-insight-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px;box-shadow:var(--sh)}
+.adv-insight-card .lbl{font-size:11px;color:var(--text2);margin-bottom:4px}
+.adv-insight-card .val{font-size:20px;font-weight:700}
+.adv-insight-card .sub{font-size:11px;color:var(--text3);margin-top:2px}
+.adv-warn{background:var(--red-lt);border:1px solid #f5c0c0;border-radius:var(--rs);padding:10px 12px;font-size:13px;color:var(--red);margin-top:10px;display:flex;gap:8px;align-items:flex-start}
+.adv-ok{background:var(--green-lt);border:1px solid #b2e4d0;border-radius:var(--rs);padding:10px 12px;font-size:13px;color:var(--green-dk);margin-top:10px;display:flex;gap:8px;align-items:flex-start}
+@media(max-width:500px){.adv-biz-row{grid-template-columns:1fr 1fr}.adv-biz-cell:nth-child(3){border-top:1px solid var(--border);grid-column:1/-1}}
+/* ADVANCED REPORTS END — styles */
+
 /* BACKUP SYSTEM START — styles */
 .bk-btn{font-size:11px;padding:5px 11px;border-radius:20px;border:1px solid rgba(255,255,255,.35);cursor:pointer;background:transparent;color:#fff;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
 .bk-btn:hover{background:rgba(255,255,255,.15)}
@@ -146,7 +189,13 @@ tr:hover td{background:#fafaf8}
     <div class="topbar-title">🇱🇷 Master Financial Control</div>
     <div class="topbar-sub">Monrovia, Liberia · Bar · Restaurant · Hall</div>
   </div>
-  <button class="gs-btn" id="gs-btn" onclick="openGS()">⚡ Connect Sheets</button>
+  <!-- SYNC SYSTEM START — topbar controls -->
+  <div class="sync-topbar-group">
+    <button class="gs-btn" id="gs-btn" onclick="openGS()">⚡ Connect Sheets</button>
+    <button class="sync-now-btn" id="sync-now-btn" onclick="syncNow()" title="Pull latest data from Google Sheets">↻ Sync Now</button>
+    <div class="sync-status-bar" id="sync-status-bar"></div>
+  </div>
+  <!-- SYNC SYSTEM END — topbar controls -->
   <!-- BACKUP SYSTEM START — topbar buttons -->
   <div class="bk-topbar-group">
     <button class="bk-btn export" onclick="bkExport()" title="Download full backup as JSON">⬇ Backup</button>
@@ -163,6 +212,7 @@ tr:hover td{background:#fafaf8}
   <button onclick="go('reconcile',this)">Reconcile</button>
   <button onclick="go('reports',this)">Reports</button>
   <button onclick="go('fx',this)">FX Rates</button>
+  <button onclick="go('advanced',this)">📊 Insights</button>
 </div>
 
 <div class="content">
@@ -529,7 +579,66 @@ tr:hover td{background:#fafaf8}
 
 </div>
 
-<!-- GS MODAL -->
+<!-- ADVANCED REPORTS TAB START -->
+<div id="tab-advanced" class="sec">
+  <div class="sec-head">Business Insights</div>
+  <div class="sec-sub">Live analysis from your transaction data — updates with every sync.</div>
+
+  <!-- Period selector -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
+    <select id="adv-period" onchange="renderAdvanced()" style="flex:1;min-width:140px;font-size:13px;padding:8px 10px">
+      <option value="month" selected>This Month</option>
+      <option value="last_month">Last Month</option>
+      <option value="quarter">This Quarter</option>
+      <option value="all">All Time</option>
+    </select>
+    <button class="btn btn-green" onclick="renderAdvanced()" style="font-size:13px;padding:8px 14px">↻ Refresh</button>
+  </div>
+
+  <!-- 1. KEY INSIGHT STRIP -->
+  <div id="adv-insight-strip" class="mg mg-3" style="margin-bottom:14px"></div>
+
+  <!-- 2. PROFIT TREND -->
+  <div class="card">
+    <div class="card-title">Profit Trend — Daily Net (USD)</div>
+    <div id="adv-trend-period-label" style="font-size:12px;color:var(--text3);margin-bottom:8px"></div>
+    <div style="position:relative;width:100%">
+      <canvas id="adv-trend-canvas" style="width:100%;display:block;border-radius:6px"></canvas>
+    </div>
+    <div id="adv-trend-legend" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px"></div>
+  </div>
+
+  <!-- 3. BUSINESS BREAKDOWN -->
+  <div class="card">
+    <div class="card-title">Business Breakdown</div>
+    <div id="adv-biz-breakdown"></div>
+  </div>
+
+  <!-- 4. EXPENSE BREAKDOWN -->
+  <div class="card">
+    <div class="card-title">Expense Breakdown — This Period</div>
+    <div id="adv-expense-breakdown"></div>
+  </div>
+
+  <!-- 5. CASH FLOW SPLIT -->
+  <div class="card">
+    <div class="card-title">Cash Flow by Payment Method</div>
+    <div id="adv-cashflow-split"></div>
+  </div>
+
+  <!-- 6. DAILY PERFORMANCE -->
+  <div class="card">
+    <div class="card-title">Daily Performance — Income by Day of Week</div>
+    <div id="adv-daily-perf"></div>
+  </div>
+
+  <!-- 7. OWNER DRAW vs PROFIT -->
+  <div class="card" id="adv-draw-card">
+    <div class="card-title">Owner Draw vs Net Profit</div>
+    <div id="adv-draw-analysis"></div>
+  </div>
+</div>
+<!-- ADVANCED REPORTS TAB END -->
 <div class="modal-bg" id="gs-modal">
   <div class="modal">
     <button class="modal-x" onclick="closeGS()">×</button>
@@ -759,7 +868,7 @@ function go(tab,btn){
   document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('on'));
   document.getElementById('tab-'+tab).classList.add('on');
   if(btn)btn.classList.add('on');
-  const r={dashboard:renderDash,ledger:renderLedger,reconcile:renderRecon,fx:renderFX};
+  const r={dashboard:renderDash,ledger:renderLedger,reconcile:renderRecon,fx:renderFX,advanced:renderAdvanced};
   if(r[tab])r[tab]();
 }
 
@@ -883,6 +992,10 @@ function saveEntry(){
   document.getElementById('f-fx').value='';
   onCurChange();
   renderDash();renderDayClose();
+  // Refresh Advanced Reports if visible
+  if (document.getElementById('tab-advanced') && document.getElementById('tab-advanced').classList.contains('on')) {
+    renderAdvanced();
+  }
 }
 function cancelEdit(){
   EDIT_ID=null;
@@ -1731,100 +1844,701 @@ async function syncRow(t){
       t.cur==='LRD'&&t.fx?(t.amt/t.fx).toFixed(2):t.cur!=='LRD'?t.amt.toFixed(2):'',
       t.method||'Cash',t.by||'Owner',t.notes||'','ACTIVE'];
     await gsPost({tab:'Master Log',rows:[row]});
+    // SYNC SYSTEM START — auto-refresh after write (gives Sheets ~1s to settle)
+    setTimeout(()=>syncSilent(),1000);
+    // SYNC SYSTEM END — auto-refresh after write
   }catch(e){}
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ADVANCED REPORTS START
+// All chart rendering uses plain Canvas API — no external libraries.
+// All data comes from existing TXN, FX, RECON globals.
+// Entry point: renderAdvanced() — called by tab router and after sync.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+
+function advPeriodFilter() {
+  const period = document.getElementById('adv-period') ? document.getElementById('adv-period').value : 'month';
+  const now = new Date();
+  return {
+    period,
+    txns: activeTXN(TXN).filter(t => {
+      const td = new Date(normDate(t.date) + 'T00:00:00');
+      if (period === 'month')      return td.getMonth() === now.getMonth() && td.getFullYear() === now.getFullYear();
+      if (period === 'last_month') { const lm = new Date(now); lm.setMonth(lm.getMonth()-1); return td.getMonth() === lm.getMonth() && td.getFullYear() === lm.getFullYear(); }
+      if (period === 'quarter')    return Math.floor(td.getMonth()/3) === Math.floor(now.getMonth()/3) && td.getFullYear() === now.getFullYear();
+      return true; // all
+    })
+  };
+}
+
+// Clamp a canvas fill % between 0 and max
+function advPct(v, max) { return max === 0 ? 0 : Math.min(1, Math.max(0, v / max)); }
+
+// Pick a colour by business name
+function advBizColor(biz) {
+  return { Bar:'#1D9E75', Restaurant:'#185FA5', Hall:'#BA7517', Personal:'#888780' }[biz] || '#888780';
+}
+
+// ── 1. KEY INSIGHT STRIP ─────────────────────────────────────────────────────
+function advRenderInsightStrip(txns) {
+  const p = calcProfit(txns);
+  const bal = calcBalances(txns);
+  const margin = p.inc > 0 ? (p.gross / p.inc * 100) : 0;
+  const topBiz = ['Bar','Restaurant','Hall'].map(b => ({
+    b, net: calcProfit(txns.filter(t => t.biz === b)).net
+  })).sort((a,b) => b.net - a.net)[0];
+
+  const cards = [
+    { lbl:'Net Profit', val: fmtU(p.net), sub: 'After all expenses & draws', cls: p.net >= 0 ? 'g' : 'r' },
+    { lbl:'Gross Margin', val: margin.toFixed(1)+'%', sub: 'Income after Cost of Goods', cls: margin >= 40 ? 'g' : margin >= 20 ? 'a' : 'r' },
+    { lbl:'Best Business', val: topBiz ? topBiz.b : '—', sub: topBiz ? fmtU(topBiz.net)+' net' : 'No data', cls: 'b' }
+  ];
+
+  document.getElementById('adv-insight-strip').innerHTML = cards.map(c =>
+    `<div class="adv-insight-card">
+      <div class="lbl">${c.lbl}</div>
+      <div class="val m-val ${c.cls}">${c.val}</div>
+      <div class="sub">${c.sub}</div>
+    </div>`
+  ).join('');
+}
+
+// ── 2. PROFIT TREND CANVAS CHART ─────────────────────────────────────────────
+function advRenderTrend(txns, period) {
+  const canvas = document.getElementById('adv-trend-canvas');
+  if (!canvas) return;
+
+  // Build daily buckets
+  const byDay = {};
+  txns.forEach(t => {
+    const d = normDate(t.date);
+    if (!byDay[d]) byDay[d] = { inc: 0, exp: 0, draw: 0 };
+    const usd = toUSD(t);
+    if (t.type === 'Income')     byDay[d].inc  += usd;
+    if (t.type === 'Expense')    byDay[d].exp  += usd;
+    if (t.type === 'Owner Draw') byDay[d].draw += usd;
+  });
+
+  const days = Object.keys(byDay).sort();
+  if (days.length === 0) {
+    document.getElementById('adv-trend-period-label').textContent = 'No data for this period.';
+    canvas.style.display = 'none';
+    return;
+  }
+  canvas.style.display = 'block';
+
+  const netByDay = days.map(d => byDay[d].inc - byDay[d].exp - byDay[d].draw);
+  const incByDay = days.map(d => byDay[d].inc);
+
+  document.getElementById('adv-trend-period-label').textContent =
+    days[0] + ' → ' + days[days.length-1] + '  (' + days.length + ' days with transactions)';
+
+  // Canvas sizing — responsive
+  const DPR = window.devicePixelRatio || 1;
+  const W_CSS = canvas.parentElement.clientWidth || 340;
+  const H_CSS = Math.min(200, Math.max(140, W_CSS * 0.38));
+  canvas.style.height = H_CSS + 'px';
+  canvas.width  = W_CSS * DPR;
+  canvas.height = H_CSS * DPR;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(DPR, DPR);
+  const W = W_CSS, H = H_CSS;
+
+  const PAD = { top: 18, right: 16, bottom: 32, left: 52 };
+  const CW = W - PAD.left - PAD.right;
+  const CH = H - PAD.top  - PAD.bottom;
+
+  // Value range — accommodate both income and net lines
+  const allVals = [...netByDay, ...incByDay];
+  const minV = Math.min(0, ...allVals);
+  const maxV = Math.max(0.01, ...allVals);
+  const range = maxV - minV;
+
+  function xOf(i)  { return PAD.left + (days.length === 1 ? CW/2 : (i / (days.length-1)) * CW); }
+  function yOf(v)  { return PAD.top + CH - ((v - minV) / range) * CH; }
+
+  // Background
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#fafaf8';
+  ctx.fillRect(0, 0, W, H);
+
+  // Zero line
+  const y0 = yOf(0);
+  ctx.strokeStyle = '#d0cec8';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(PAD.left, y0); ctx.lineTo(W - PAD.right, y0); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Grid lines + Y labels (3 ticks)
+  ctx.fillStyle = '#888780';
+  ctx.font = '10px -apple-system,sans-serif';
+  ctx.textAlign = 'right';
+  const ticks = [minV, (minV+maxV)/2, maxV];
+  ticks.forEach(v => {
+    const y = yOf(v);
+    ctx.strokeStyle = '#ece9e2';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(W - PAD.right, y); ctx.stroke();
+    ctx.fillText('$'+Math.round(v), PAD.left - 4, y + 4);
+  });
+
+  // Income area fill (subtle)
+  ctx.beginPath();
+  ctx.moveTo(xOf(0), yOf(0));
+  incByDay.forEach((v,i) => ctx.lineTo(xOf(i), yOf(v)));
+  ctx.lineTo(xOf(days.length-1), yOf(0));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(29,158,117,0.08)';
+  ctx.fill();
+
+  // Income line
+  ctx.beginPath();
+  incByDay.forEach((v,i) => { if(i===0) ctx.moveTo(xOf(i),yOf(v)); else ctx.lineTo(xOf(i),yOf(v)); });
+  ctx.strokeStyle = 'rgba(29,158,117,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Net profit area fill
+  ctx.beginPath();
+  ctx.moveTo(xOf(0), y0);
+  netByDay.forEach((v,i) => ctx.lineTo(xOf(i), yOf(v)));
+  ctx.lineTo(xOf(days.length-1), y0);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(24,95,165,0.10)';
+  ctx.fill();
+
+  // Net profit line
+  ctx.beginPath();
+  netByDay.forEach((v,i) => { if(i===0) ctx.moveTo(xOf(i),yOf(v)); else ctx.lineTo(xOf(i),yOf(v)); });
+  ctx.strokeStyle = '#185FA5';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Dots for net profit
+  netByDay.forEach((v,i) => {
+    ctx.beginPath();
+    ctx.arc(xOf(i), yOf(v), 3, 0, Math.PI*2);
+    ctx.fillStyle = v >= 0 ? '#185FA5' : '#A32D2D';
+    ctx.fill();
+  });
+
+  // X-axis date labels (max 7, evenly spaced)
+  ctx.fillStyle = '#888780';
+  ctx.font = '10px -apple-system,sans-serif';
+  ctx.textAlign = 'center';
+  const step = Math.max(1, Math.ceil(days.length / 7));
+  for (let i = 0; i < days.length; i += step) {
+    ctx.fillText(days[i].slice(5), xOf(i), H - PAD.bottom + 14);
+  }
+
+  // Legend
+  document.getElementById('adv-trend-legend').innerHTML =
+    `<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:18px;height:3px;background:#185FA5;border-radius:2px"></span>Net Profit</span>` +
+    `<span style="display:flex;align-items:center;gap:4px"><span style="display:inline-block;width:18px;height:3px;background:rgba(29,158,117,0.6);border-radius:2px"></span>Income</span>`;
+}
+
+// ── 3. BUSINESS BREAKDOWN ─────────────────────────────────────────────────────
+function advRenderBizBreakdown(txns) {
+  const BIZES = ['Bar','Restaurant','Hall'];
+  const results = BIZES.map(b => {
+    const bt = txns.filter(t => t.biz === b);
+    const p = calcProfit(bt);
+    return { b, inc: p.inc, exp: p.cog + p.oe + p.maint + p.admin, draw: p.draw, net: p.net, txnCount: bt.length };
+  });
+
+  const maxInc = Math.max(0.01, ...results.map(r => r.inc));
+
+  const html = results.map(r => {
+    const netColor = r.net >= 0 ? 'var(--green)' : 'var(--red-mid)';
+    const barPct = Math.max(0, Math.min(100, (r.inc / maxInc) * 100)).toFixed(1);
+    const expPct = r.inc > 0 ? Math.min(100, ((r.exp + r.draw) / r.inc) * 100).toFixed(1) : 0;
+    const margin = r.inc > 0 ? ((r.net / r.inc) * 100).toFixed(1) : '—';
+    return `
+    <div class="adv-biz-block">
+      <div class="adv-biz-header">
+        <span style="display:flex;align-items:center;gap:8px">
+          <span style="width:10px;height:10px;border-radius:50%;background:${advBizColor(r.b)};display:inline-block"></span>
+          ${r.b}
+        </span>
+        <span style="font-size:12px;color:var(--text2);font-weight:400">${r.txnCount} transactions</span>
+      </div>
+      <div style="padding:8px 14px 4px">
+        <div class="adv-bar-track">
+          <div class="adv-bar-fill" style="width:${barPct}%;background:${advBizColor(r.b)}"></div>
+        </div>
+        <div style="height:6px;background:var(--gray-lt);border-radius:3px;overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${expPct}%;background:var(--red-mid);border-radius:3px;opacity:0.65"></div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px;display:flex;gap:12px">
+          <span style="color:${advBizColor(r.b)}">■ Income</span>
+          <span style="color:var(--red-mid)">■ Expenses+Draw</span>
+        </div>
+      </div>
+      <div class="adv-biz-row">
+        <div class="adv-biz-cell"><div class="lbl">Income</div><div class="val" style="color:var(--green)">${fmtU(r.inc)}</div></div>
+        <div class="adv-biz-cell"><div class="lbl">Expenses</div><div class="val" style="color:var(--red-mid)">${fmtU(r.exp + r.draw)}</div></div>
+        <div class="adv-biz-cell"><div class="lbl">Net Profit</div><div class="val" style="color:${netColor}">${fmtU(r.net)}</div><div style="font-size:11px;color:var(--text3)">${margin !== '—' ? margin+'% margin' : '—'}</div></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('adv-biz-breakdown').innerHTML = html || '<div class="empty">No data for this period.</div>';
+}
+
+// ── 4. EXPENSE BREAKDOWN ──────────────────────────────────────────────────────
+function advRenderExpenseBreakdown(txns) {
+  const expTxns = txns.filter(t => t.type === 'Expense');
+  const byCategory = {};
+  expTxns.forEach(t => {
+    if (!byCategory[t.cat]) byCategory[t.cat] = 0;
+    byCategory[t.cat] += toUSD(t);
+  });
+
+  const rows = Object.entries(byCategory).sort((a,b) => b[1]-a[1]);
+  const total = rows.reduce((s,[,v]) => s+v, 0);
+  if (!rows.length) {
+    document.getElementById('adv-expense-breakdown').innerHTML = '<div class="empty">No expenses recorded for this period.</div>';
+    return;
+  }
+
+  const catColors = {
+    'Cost of Goods':     '#A32D2D',
+    'Operating Expenses':'#BA7517',
+    'Maintenance':       '#185FA5',
+    'Admin':             '#5F5E5A'
+  };
+  const maxVal = rows[0][1];
+  const topCat = rows[0][0];
+
+  let html = `<div class="alert a-warn" style="margin-bottom:12px"><div class="adot"></div><strong>Biggest expense: ${topCat}</strong> — ${fmtU(rows[0][1])} (${total > 0 ? (rows[0][1]/total*100).toFixed(1) : 0}% of total expenses). Review this category first.</div>`;
+
+  html += rows.map(([cat, val]) => {
+    const pct = total > 0 ? (val/total*100).toFixed(1) : 0;
+    const barPct = (val/maxVal*100).toFixed(1);
+    const color = catColors[cat] || '#888780';
+    return `
+    <div class="adv-exp-row">
+      <div class="adv-exp-lbl" title="${cat}">${cat}</div>
+      <div style="flex:1">
+        <div class="adv-exp-track"><div class="adv-exp-fill" style="width:${barPct}%;background:${color}"></div></div>
+        <div style="font-size:10px;color:var(--text3);margin-top:1px">${pct}% of expenses</div>
+      </div>
+      <div class="adv-exp-val" style="color:${color}">${fmtU(val)}</div>
+    </div>`;
+  }).join('');
+
+  html += `<div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700;font-size:13px">
+    <span>Total Expenses</span><span style="color:var(--red-mid)">${fmtU(total)}</span>
+  </div>`;
+
+  document.getElementById('adv-expense-breakdown').innerHTML = html;
+}
+
+// ── 5. CASH FLOW SPLIT ────────────────────────────────────────────────────────
+function advRenderCashFlowSplit(txns) {
+  const methods = [
+    { key: 'Cash',          label: '💵 Cash',              color: '#1D9E75' },
+    { key: 'Mobile',        label: '📱 Mobile Money',       color: '#185FA5' },
+    { key: 'Bank',          label: '🏦 Bank Transfer',       color: '#BA7517' }
+  ];
+
+  function getMethod(t) {
+    const m = (t.method || 'Cash').toLowerCase();
+    if (m.includes('mobile')) return 'Mobile';
+    if (m.includes('bank'))   return 'Bank';
+    return 'Cash';
+  }
+
+  const totals = { Cash:0, Mobile:0, Bank:0 };
+  const counts = { Cash:0, Mobile:0, Bank:0 };
+  txns.forEach(t => {
+    const m = getMethod(t);
+    totals[m] += toUSD(t);
+    counts[m]++;
+  });
+
+  const grand = Object.values(totals).reduce((s,v)=>s+v,0);
+  if (!grand) {
+    document.getElementById('adv-cashflow-split').innerHTML = '<div class="empty">No transactions for this period.</div>';
+    return;
+  }
+
+  // Stacked percentage bar
+  const segments = methods.map(m => ({...m, val: totals[m.key], pct: grand > 0 ? (totals[m.key]/grand*100) : 0 }));
+  const stackedBar = `
+    <div style="height:16px;border-radius:8px;overflow:hidden;display:flex;margin-bottom:14px">
+      ${segments.map(s => `<div style="width:${s.pct.toFixed(1)}%;background:${s.color};transition:width .4s" title="${s.label}: ${fmtU(s.val)}"></div>`).join('')}
+    </div>`;
+
+  const rows = methods.map(m => {
+    const pct = grand > 0 ? (totals[m.key]/grand*100).toFixed(1) : '0.0';
+    return `
+    <div class="adv-method-row">
+      <span style="display:flex;align-items:center;gap:8px">
+        <span style="width:10px;height:10px;border-radius:50%;background:${m.color};display:inline-block;flex-shrink:0"></span>
+        ${m.label}
+        <span style="font-size:11px;color:var(--text3)">${counts[m.key]} txns</span>
+      </span>
+      <span style="display:flex;align-items:center;gap:8px">
+        <strong>${fmtU(totals[m.key])}</strong>
+        <span class="adv-pct-pill">${pct}%</span>
+      </span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('adv-cashflow-split').innerHTML = stackedBar + rows +
+    `<div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700;font-size:13px">
+      <span>Total (all methods)</span><span>${fmtU(grand)}</span>
+    </div>`;
+}
+
+// ── 6. DAILY PERFORMANCE ──────────────────────────────────────────────────────
+function advRenderDailyPerf(txns) {
+  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const incByDow  = [0,0,0,0,0,0,0];
+  const dayCount  = [0,0,0,0,0,0,0];
+  const seenDates = {};
+
+  txns.filter(t => t.type === 'Income').forEach(t => {
+    const d = normDate(t.date);
+    const dow = new Date(d + 'T00:00:00').getDay();
+    incByDow[dow] += toUSD(t);
+    if (!seenDates[dow]) seenDates[dow] = new Set();
+    seenDates[dow].add(d);
+  });
+
+  DOW.forEach((_, i) => { dayCount[i] = seenDates[i] ? seenDates[i].size : 0; });
+
+  // Average per occurrence (fair comparison across unequal day counts)
+  const avgByDow = incByDow.map((v,i) => dayCount[i] > 0 ? v / dayCount[i] : 0);
+  const maxAvg = Math.max(0.01, ...avgByDow);
+  const maxI = avgByDow.indexOf(Math.max(...avgByDow));
+  const minActive = avgByDow.map((v,i)=>({v,i})).filter(x=>x.v>0);
+  const minI = minActive.length ? minActive.sort((a,b)=>a.v-b.v)[0].i : -1;
+
+  if (!incByDow.some(v=>v>0)) {
+    document.getElementById('adv-daily-perf').innerHTML = '<div class="empty">No income recorded for this period.</div>';
+    return;
+  }
+
+  let html = `<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Shows average income per occurrence of each day. Helps identify your most profitable trading days.</div>`;
+
+  html += DOW.map((label,i) => {
+    const barPct = (avgByDow[i]/maxAvg*100).toFixed(1);
+    const isBest  = i === maxI && avgByDow[i] > 0;
+    const isWorst = i === minI && minI !== maxI;
+    const barColor = isBest ? '#1D9E75' : isWorst ? '#A32D2D' : '#185FA5';
+    const badge = isBest ? ' <span style="font-size:10px;background:var(--green-lt);color:var(--green-dk);padding:1px 6px;border-radius:3px;font-weight:700">BEST</span>'
+                : isWorst ? ' <span style="font-size:10px;background:var(--red-lt);color:var(--red);padding:1px 6px;border-radius:3px;font-weight:700">SLOW</span>' : '';
+    return `
+    <div class="adv-dow-row">
+      <div class="adv-dow-lbl">${label}</div>
+      <div class="adv-dow-track">
+        <div class="adv-dow-fill" style="width:${barPct}%;background:${barColor}">
+          ${avgByDow[i] > maxAvg * 0.2 ? fmtU(avgByDow[i]) : ''}
+        </div>
+      </div>
+      <div class="adv-dow-val" style="color:${barColor}">${avgByDow[i] > 0 ? fmtU(avgByDow[i]) : '—'}</div>
+      ${badge}
+    </div>`;
+  }).join('');
+
+  if (maxI >= 0) html += `<div style="font-size:12px;color:var(--text2);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+    📈 <strong>${DOW[maxI]}</strong> is your strongest day (avg ${fmtU(avgByDow[maxI])}/occurrence).
+    ${minI >= 0 && minI !== maxI ? ' Consider promotions on <strong>'+DOW[minI]+'</strong> to lift slow-day revenue.' : ''}
+  </div>`;
+
+  document.getElementById('adv-daily-perf').innerHTML = html;
+}
+
+// ── 7. OWNER DRAW vs PROFIT ───────────────────────────────────────────────────
+function advRenderDrawAnalysis(txns) {
+  const p = calcProfit(txns);
+  const drawPct = p.opProfit > 0 ? Math.min(200, (p.draw / p.opProfit) * 100) : (p.draw > 0 ? 200 : 0);
+  const isOverDrawn   = p.draw > p.opProfit && p.draw > 0;
+  const isDangerous   = p.draw > 0 && p.opProfit > 0 && p.draw / p.opProfit > 0.5;
+  const fillColor = isOverDrawn ? '#A32D2D' : isDangerous ? '#BA7517' : '#1D9E75';
+  const fillPct   = Math.min(100, drawPct).toFixed(1);
+
+  let statusHtml = '';
+  if (p.draw === 0) {
+    statusHtml = `<div class="adv-ok"><span>✓</span><span>No owner draws recorded this period. All profit is retained in the business.</span></div>`;
+  } else if (isOverDrawn) {
+    statusHtml = `<div class="adv-warn"><span>⚠</span><span><strong>Over-drawn!</strong> You have drawn ${fmtU(p.draw)} but operating profit is only ${fmtU(p.opProfit)}. You are drawing from capital — this depletes your business reserves.</span></div>`;
+  } else if (isDangerous) {
+    statusHtml = `<div class="adv-warn" style="background:var(--amber-lt);border-color:#FAC775;color:var(--amber-dk)"><span>⚠</span><span><strong>High draw rate (${drawPct.toFixed(0)}%).</strong> Consider reducing draws to strengthen the business cash position.</span></div>`;
+  } else {
+    statusHtml = `<div class="adv-ok"><span>✓</span><span>Draw is within safe range (${drawPct.toFixed(0)}% of operating profit). Business remains self-funded.</span></div>`;
+  }
+
+  const html = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+      <div class="m"><div class="m-lbl">Operating Profit</div><div class="m-val ${p.opProfit>=0?'g':'r'}">${fmtU(p.opProfit)}</div></div>
+      <div class="m"><div class="m-lbl">Owner Draw</div><div class="m-val a">${fmtU(p.draw)}</div></div>
+      <div class="m"><div class="m-lbl">Net After Draw</div><div class="m-val ${p.net>=0?'g':'r'}">${fmtU(p.net)}</div></div>
+    </div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Draw as % of Operating Profit</div>
+    <div class="adv-draw-meter">
+      <div class="adv-draw-fill" style="width:${fillPct}%;background:${fillColor}"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:4px">
+      <span>$0</span>
+      <span style="color:var(--amber-dk)">50%</span>
+      <span style="color:var(--red)">100%+ (danger)</span>
+    </div>
+    ${statusHtml}`;
+
+  document.getElementById('adv-draw-analysis').innerHTML = html;
+}
+
+// ── MAIN ENTRY POINT ──────────────────────────────────────────────────────────
+function renderAdvanced() {
+  const { txns, period } = advPeriodFilter();
+  advRenderInsightStrip(txns);
+  // Defer canvas render slightly so the container has measured its width
+  setTimeout(() => advRenderTrend(txns, period), 30);
+  advRenderBizBreakdown(txns);
+  advRenderExpenseBreakdown(txns);
+  advRenderCashFlowSplit(txns);
+  advRenderDailyPerf(txns);
+  advRenderDrawAnalysis(txns);
+}
+
+// Re-render on window resize (canvas is responsive but needs explicit redraw)
+window.addEventListener('resize', () => {
+  if (document.getElementById('tab-advanced') && document.getElementById('tab-advanced').classList.contains('on')) {
+    const { txns, period } = advPeriodFilter();
+    advRenderTrend(txns, period);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ADVANCED REPORTS END
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SYNC SYSTEM START
+// Two-way safe sync: auto load on startup, safe merge, last sync time,
+// Sync Now button, auto-refresh after transaction, silent error handling.
+// All new code is isolated here. Nothing above this block is modified.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SYNC_LAST_KEY = 'mfc3_last_sync'; // localStorage key for last sync timestamp
+
+// ── UPDATE SYNC STATUS UI ────────────────────────────────────────────────────
+// Updates the small status indicator in the topbar.
+// state: 'ok' | 'err' | 'loading' | ''
+function syncUpdateLastSyncUI(date, state) {
+  const bar = document.getElementById('sync-status-bar');
+  if (!bar) return;
+  if (state === 'loading') {
+    bar.className = 'sync-status-bar loading';
+    bar.textContent = '↻ Syncing…';
+    return;
+  }
+  if (state === 'err') {
+    bar.className = 'sync-status-bar err';
+    bar.textContent = '⚠ Cloud sync failed';
+    return;
+  }
+  if (date) {
+    const h = date.getHours().toString().padStart(2,'0');
+    const m = date.getMinutes().toString().padStart(2,'0');
+    bar.className = 'sync-status-bar ok';
+    bar.textContent = '✓ Synced '+h+':'+m;
+    // Persist timestamp
+    try { localStorage.setItem(SYNC_LAST_KEY, date.toISOString()); } catch(e) {}
+  } else {
+    bar.className = 'sync-status-bar';
+    bar.textContent = '';
+  }
+}
+
+// ── RESTORE LAST SYNC DISPLAY ON LOAD ───────────────────────────────────────
+function syncRestoreLastSyncDisplay() {
+  try {
+    const raw = localStorage.getItem(SYNC_LAST_KEY);
+    if (raw) {
+      const d = new Date(raw);
+      if (!isNaN(d)) syncUpdateLastSyncUI(d, 'ok');
+    }
+  } catch(e) {}
+}
+
+// ── CORE MERGE LOGIC — SAFE, NON-DESTRUCTIVE ────────────────────────────────
+// Fetches from Google Sheets and merges into local state using IDs as keys.
+// Google Sheets is treated as the source of truth:
+//   • New records from Sheets are added locally.
+//   • Existing local records (by ID) are NOT overwritten.
+//   • FX rates and closed days are merged by date — no duplicates.
+// Returns { addedTxn, totalTxn } summary.
+async function _syncMergeFromSheets() {
+  // ── Transactions ──
+  const txnRes = await fetch(GS.url + '?sheetId=' + encodeURIComponent(GS.id) + '&tab=Master+Log');
+  const txnData = await txnRes.json();
+  const txnRows = txnData.rows || [];
+
+  let addedTxn = 0;
+  if (txnRows.length > 1) {
+    // Build a Set of existing local IDs for O(1) lookup
+    const localIds = new Set(TXN.map(t => t.id));
+
+    let skippedTxn = 0;
+    const sheetTxns = txnRows.slice(1).filter(r => r[0] && r[1]).map(r => ({
+      id:     Number(r[0]) || Date.now(),
+      date:   normDate(String(r[1])),
+      biz:    String(r[2] || ''),
+      type:   String(r[3] || ''),
+      cat:    String(r[4] || ''),
+      cur:    String(r[5] || 'USD'),
+      amt:    parseFloat(r[6]) || 0,
+      fx:     r[7] ? parseFloat(r[7]) || null : null,
+      method: String(r[9] || 'Cash'),
+      by:     String(r[10] || 'Owner'),
+      notes:  String(r[11] || ''),
+      status: String(r[12] || 'ACTIVE')
+    })).filter(t => {
+      if (!isValidISODate(t.date)) {
+        console.warn('[MFC Sync] Bad date from sheet — row skipped:', t);
+        skippedTxn++;
+        return false;
+      }
+      return true;
+    });
+
+    if (skippedTxn > 0) console.warn('[MFC Sync] ' + skippedTxn + ' row(s) skipped due to invalid dates.');
+
+    // Merge: add only records not already present locally
+    sheetTxns.forEach(sheetTxn => {
+      if (!localIds.has(sheetTxn.id)) {
+        TXN.push(sheetTxn);
+        localIds.add(sheetTxn.id);
+        addedTxn++;
+      }
+    });
+  }
+
+  // ── FX Rates — merge by date, prefer existing local entry ──
+  const fxRes = await fetch(GS.url + '?sheetId=' + encodeURIComponent(GS.id) + '&tab=FX+Rates');
+  const fxData = await fxRes.json();
+  const fxRows = fxData.rows || [];
+  if (fxRows.length > 1) {
+    const localFxDates = new Set(FX.map(r => r.date));
+    fxRows.slice(1).filter(r => r[0] && r[1]).forEach(r => {
+      const date = normDate(String(r[0]));
+      if (isValidISODate(date) && !localFxDates.has(date)) {
+        FX.push({ date, rate: parseFloat(r[1]) || 178.5, src: String(r[2] || 'Central Bank of Liberia') });
+        localFxDates.add(date);
+      }
+    });
+  }
+
+  // ── Closed Days — merge by date ──
+  const cdRes = await fetch(GS.url + '?sheetId=' + encodeURIComponent(GS.id) + '&tab=Closed+Days');
+  const cdData = await cdRes.json();
+  const cdRows = cdData.rows || [];
+  if (cdRows.length > 1) {
+    const localClosed = new Set(CLOSED);
+    cdRows.slice(1).filter(r => r[0]).forEach(r => {
+      const d = normDate(String(r[0]));
+      if (isValidISODate(d) && !localClosed.has(d)) {
+        CLOSED.push(d);
+        localClosed.add(d);
+      }
+    });
+  }
+
+  // Persist merged state
+  GS.lastSync = new Date().toISOString();
+  save();
+  renderDash(); renderFX(); renderDayClose(); buildByDropdowns();
+  // Refresh Advanced Reports if it's the active tab
+  if (document.getElementById('tab-advanced') && document.getElementById('tab-advanced').classList.contains('on')) {
+    renderAdvanced();
+  }
+
+  return { addedTxn, totalTxn: TXN.length };
+}
+
+// ── SILENT SYNC — used for auto-load and post-transaction refresh ────────────
+// Never shows alerts, never blocks the UI.
+// Shows a small status indicator in the topbar.
+async function syncSilent() {
+  if (!GS.on || !GS.url) return; // not connected — silently skip
+  syncUpdateLastSyncUI(null, 'loading');
+  try {
+    await _syncMergeFromSheets();
+    syncUpdateLastSyncUI(new Date(), 'ok');
+  } catch(e) {
+    console.warn('[MFC Sync] Silent sync failed:', e.message);
+    syncUpdateLastSyncUI(null, 'err');
+    // Clear error indicator after 5 s so it does not distract permanently
+    setTimeout(() => syncUpdateLastSyncUI(null, ''), 5000);
+  }
+}
+
+// ── SYNC NOW BUTTON HANDLER ──────────────────────────────────────────────────
+async function syncNow() {
+  const btn = document.getElementById('sync-now-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '↻ Syncing…'; }
+  await syncSilent();
+  if (btn) { btn.disabled = false; btn.textContent = '↻ Sync Now'; }
+  // Also update the dashboard sync-msg for visibility
+  const msg = document.getElementById('sync-msg');
+  if (msg && GS.on) {
+    const raw = localStorage.getItem(SYNC_LAST_KEY);
+    if (raw) {
+      const d = new Date(raw);
+      const h = d.getHours().toString().padStart(2,'0');
+      const m = d.getMinutes().toString().padStart(2,'0');
+      msg.className = 'cfm cfm-ok';
+      msg.textContent = '✓ Synced at ' + h + ':' + m;
+      setTimeout(() => { if (msg) msg.textContent = ''; }, 5000);
+    }
+  }
+}
+
+// ── AUTO LOAD ON STARTUP ─────────────────────────────────────────────────────
+// Runs once after page load. Silent — never blocks UI or shows alerts.
+// Only fires if Google Sheets is connected.
+function syncAutoLoadOnStartup() {
+  syncRestoreLastSyncDisplay(); // immediately show last known sync time
+  if (!GS.on || !GS.url) return;
+  // Small delay so the UI renders fully first
+  setTimeout(async () => {
+    try {
+      await syncSilent();
+    } catch(e) {
+      // Already handled silently inside syncSilent()
+    }
+  }, 800);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SYNC SYSTEM END
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// SYNC SYSTEM START — loadFromSheets (manual, confirms first, replaces local data)
 async function loadFromSheets(){
   const msg=document.getElementById('sync-msg');
   if(!GS.on||!GS.url){msg.className='cfm cfm-err';msg.textContent='Not connected. Click Setup Guide first.';return;}
-  if(!confirm('Load data from Google Sheets?\n\nThis will REPLACE all data currently on this device with your cloud backup.\n\nMake sure you have synced this device first if it has newer data.')){return;}
+  if(!confirm('Load data from Google Sheets?\n\nThis will MERGE Google Sheets data into this device.\nExisting local transactions are preserved; only new cloud records are added.\n\nContinue?')){return;}
   msg.className='cfm';msg.textContent='Loading from Google Sheets…';
-
-  // ── Clear local state before loading — prevents ghost data from stale cache ──
-  TXN=[];
-  _reconData={};
-  RECON=[];
-  // ─────────────────────────────────────────────────────────────────────────────
-
   try{
-    // Load transactions
-    const txnRes=await fetch(GS.url+'?sheetId='+encodeURIComponent(GS.id)+'&tab=Master+Log');
-    const txnData=await txnRes.json();
-    const txnRows=txnData.rows||[];
-    // Row 0 is headers: ID,Date,Business,Type,Category,Amount USD,Method,Handled By,Notes
-    if(txnRows.length>1){
-      // Headers: ID,Date,Biz,Type,Cat,Currency,Amt,FX,USDEquiv,Method,By,Notes,Status
-      let skippedTxn=0;
-      TXN=txnRows.slice(1).filter(r=>r[0]&&r[1]).map(r=>({
-        id:Number(r[0])||Date.now(),
-        date:normDate(String(r[1])),   // normalise first
-        biz:String(r[2]||''),
-        type:String(r[3]||''),
-        cat:String(r[4]||''),
-        cur:String(r[5]||'USD'),
-        amt:parseFloat(r[6])||0,
-        fx:r[7]?parseFloat(r[7])||null:null,
-        method:String(r[9]||'Cash'),
-        by:String(r[10]||'Owner'),
-        notes:String(r[11]||''),
-        status:String(r[12]||'ACTIVE')
-      })).filter(t=>{
-        // Hard validation — rows with bad dates are skipped entirely, never stored
-        if(!isValidISODate(t.date)){
-          console.warn('[MFC] Bad date from sheet — row skipped:',t);
-          skippedTxn++;
-          return false;
-        }
-        return true;
-      });
-      if(skippedTxn>0) console.warn('[MFC] loadFromSheets: '+skippedTxn+' transaction row(s) skipped due to invalid dates.');
-    } else if(txnRows.length===1){
-      TXN=[];// Only header row, no data
-    }
-
-    // Load FX rates
-    const fxRes=await fetch(GS.url+'?sheetId='+encodeURIComponent(GS.id)+'&tab=FX+Rates');
-    const fxData=await fxRes.json();
-    const fxRows=fxData.rows||[];
-    if(fxRows.length>1){
-      FX=fxRows.slice(1).filter(r=>r[0]&&r[1]).map(r=>({
-        date:normDate(String(r[0])),rate:parseFloat(r[1])||178.5,src:String(r[2]||'Central Bank of Liberia')
-      })).filter(r=>{
-        if(!isValidISODate(r.date)){
-          console.warn('[MFC] Bad FX rate date from sheet — row skipped:',r);
-          return false;
-        }
-        return true;
-      });
-    }
-
-    // Load closed days
-    const cdRes=await fetch(GS.url+'?sheetId='+encodeURIComponent(GS.id)+'&tab=Closed+Days');
-    const cdData=await cdRes.json();
-    const cdRows=cdData.rows||[];
-    if(cdRows.length>1){
-      CLOSED=cdRows.slice(1).filter(r=>r[0]).map(r=>normDate(String(r[0]))).filter(d=>{
-        if(!isValidISODate(d)){
-          console.warn('[MFC] Bad closed-day date from sheet — entry skipped:',d);
-          return false;
-        }
-        return true;
-      });
-    }
-
-    save();
-    renderDash();renderFX();renderDayClose();buildByDropdowns();
+    const result=await _syncMergeFromSheets();
     msg.className='cfm cfm-ok';
-    const loadedActive=activeTXN(TXN).length;
-    const skippedNote=TXN.length===0&&txnRows.length>1?' (check console — some rows may have been skipped due to bad dates)':'';
-    msg.textContent='✓ Loaded '+loadedActive+' active transactions ('+TXN.length+' total incl. deleted) · '+FX.length+' FX rates · '+CLOSED.length+' closed days from Google Sheets'+skippedNote;
-    GS.lastSync=new Date().toISOString();save();
+    msg.textContent='✓ Merged: +'+result.addedTxn+' new transactions · '+result.totalTxn+' total · '+FX.length+' FX rates · '+CLOSED.length+' closed days';
+    syncUpdateLastSyncUI(new Date());
   }catch(e){
     msg.className='cfm cfm-err';
-    msg.textContent='Load failed: '+e.message+'. Check that your Apps Script has the new doGet() function (see Setup Guide Step 2).';
+    msg.textContent='Load failed: '+e.message+'. Check that your Apps Script has the doGet() function (see Setup Guide Step 2).';
   }
   setTimeout(()=>msg.textContent='',9000);
 }
+// SYNC SYSTEM END — loadFromSheets
 
 // DAY CLOSE
 function renderDayClose(){
@@ -1935,6 +2649,9 @@ document.getElementById('dc-date').value=todayISO();
 document.getElementById('dc-date').addEventListener('change',renderDayClose);
 updateCats();renderDash();renderFX();renderDayClose();buildByDropdowns();
 if(GS.on){document.getElementById('gs-id').value=GS.id;document.getElementById('gs-url').value=GS.url;document.getElementById('gs-btn').textContent='Sheets Connected';document.getElementById('gs-btn').className='gs-btn on';}
+// SYNC SYSTEM START — auto load on startup
+syncAutoLoadOnStartup();
+// SYNC SYSTEM END — auto load on startup
 </script>
   <script>
 if ("serviceWorker" in navigator) {
