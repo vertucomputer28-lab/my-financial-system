@@ -1301,20 +1301,26 @@ function calcRecon(){
   const usdSrc=document.getElementById('r-usd-open-source');
   const lrdSrc=document.getElementById('r-lrd-open-source');
 
-  if(auto.usd!==null){
-    usdOpenEl.value=auto.usd.toFixed(2);
-    usdSrc.textContent='Auto-carried';
-  } else {
-    usdOpenEl.value='';usdOpenEl.placeholder='Enter manually';
-    usdSrc.textContent='Manual';usdSrc.style.background='var(--amber-lt)';usdSrc.style.color='var(--amber-dk)';
-  }
-  if(auto.lrd!==null){
-    lrdOpenEl.value=Math.round(auto.lrd);
-    lrdSrc.textContent='Auto-carried';
-  } else {
-    lrdOpenEl.value='';lrdOpenEl.placeholder='Enter manually';
-    lrdSrc.textContent='Manual';lrdSrc.style.background='var(--amber-lt)';lrdSrc.style.color='var(--amber-dk)';
-  }
+  if (auto.usd != null && !isNaN(auto.usd)) {
+  usdOpenEl.value = Number(auto.usd).toFixed(2);
+  usdSrc.textContent = 'Auto-carried';
+} else {
+  usdOpenEl.value = '';
+  usdOpenEl.placeholder = 'Enter manually';
+  usdSrc.textContent = 'Manual';
+  usdSrc.style.background = 'var(--amber-lt)';
+  usdSrc.style.color = 'var(--amber-dk)';
+}
+  if (auto.lrd != null && !isNaN(auto.lrd)) {
+  lrdOpenEl.value = Math.round(auto.lrd);
+  lrdSrc.textContent = 'Auto-carried';
+} else {
+  lrdOpenEl.value = '';
+  lrdOpenEl.placeholder = 'Enter manually';
+  lrdSrc.textContent = 'Manual';
+  lrdSrc.style.background = 'var(--amber-lt)';
+  lrdSrc.style.color = 'var(--amber-dk)';
+}
   _reconData._autoUSD=auto.usd;_reconData._autoLRD=auto.lrd;
 
   // Non-cash reference
